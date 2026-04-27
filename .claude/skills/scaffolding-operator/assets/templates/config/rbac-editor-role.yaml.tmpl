@@ -1,0 +1,26 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/name: {{OPERATOR_NAME}}
+    app.kubernetes.io/managed-by: kustomize
+  name: {{KIND_LOWER}}-editor-role
+rules:
+- apiGroups:
+  - {{API_GROUP}}.{{DOMAIN}}
+  resources:
+  - {{KIND_PLURAL}}
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - {{API_GROUP}}.{{DOMAIN}}
+  resources:
+  - {{KIND_PLURAL}}/status
+  verbs:
+  - get

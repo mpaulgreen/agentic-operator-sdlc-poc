@@ -1,0 +1,5 @@
+- So give me a detailed analysis on what is involved in building openshift operators? You need to research on it and summarize the content for me. 
+- We have been coding openshift-operators using operator-sdk and deploying it as you performed in the analyss in openshift-operator-research.md. Now with     
+  claude agentic skills it seems following the old steps is cumbersome and very complicated. If we were to develop Openshift operator using Claude Agentic    
+  skills, what is the recommended architcture? It could be a combination of various skills not necessarily one huge complicate skills. Think Hard. This is a  
+  complex architectural and design related question.   

@@ -1,0 +1,19 @@
+domain: {{DOMAIN}}
+layout:
+- go.kubebuilder.io/v4
+plugins:
+  manifests.sdk.operatorframework.io/v2: {}
+  scorecard.sdk.operatorframework.io/v2: {}
+projectName: {{OPERATOR_NAME}}
+repo: {{REPO_PATH}}
+resources:
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: {{DOMAIN}}
+  group: {{API_GROUP}}
+  kind: {{KIND}}
+  path: {{REPO_PATH}}/api/{{API_VERSION}}
+  version: {{API_VERSION}}
+version: "3"
