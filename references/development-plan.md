@@ -282,58 +282,12 @@ See `tests/operator-reviewer/gap_analysis.md` for comparison of automated vs man
 ## Sprint 7: `operator-test-generator` (Subagent)
 
 ### Build
-Create the subagent definition:
-```
-.claude/agents/operator-test-generator.md
-```
 
-Assigns skills: `testing-operator`
+1 agent definition at `.claude/agents/operator-test-generator.md`. Uses skill 4 (testing-operator). Discovers reconciler methods, generates suite_test.go + controller_test.go, validates with go vet + test matrix.
 
-### Unit Test
+See `tests/operator-test-generator/test_guide.md` for full test prompts, verification commands, and acceptance criteria.
 
-**Test 7.1 — Generate and run tests**
-```
-Prompt: "Generate and run tests for the RedisCluster controller at 
-/tmp/redis-operator-test/internal/controller/. Identify all reconciler 
-methods, generate test cases, and run them. Report results."
-```
-
-Expected output:
-- List of discovered reconciler methods
-- Generated test file (or updated existing)
-- Test execution results with pass/fail counts
-- For any failures: specific diagnosis and fix suggestions
-
-Acceptance criteria:
-- [ ] All reconciler methods discovered
-- [ ] Tests generated for each method
-- [ ] Tests actually executed (not just generated)
-- [ ] Results reported with pass/fail breakdown
-
-**Test 7.2 — Incremental test generation**
-```
-Prompt: "A new reconcilePodDisruptionBudget() method was added to the 
-RedisCluster controller. Generate tests for ONLY this new method and 
-add them to the existing test file. Run the full test suite afterward."
-```
-
-Acceptance criteria:
-- [ ] Only new tests added (existing tests unchanged)
-- [ ] New tests follow same pattern as existing ones
-- [ ] Full suite runs after addition
-
-### Integration Test (Subagent + Skill 4 + Prior Skills)
-
-**Test I-7 — Generate tests for freshly built operator**
-```
-Prompt: "I just built the cache-operator. Generate and run the complete 
-test suite for it."
-```
-
-Acceptance criteria:
-- [ ] Tests generated match the controller structure
-- [ ] Tests reference correct types from API package
-- [ ] Tests compile and run
+See `tests/operator-test-generator/gap_analysis.md` for comparison against manual test writing and operator-sdk.
 
 ---
 

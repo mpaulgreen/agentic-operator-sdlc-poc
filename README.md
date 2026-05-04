@@ -34,9 +34,10 @@ See [architecture.md](architecture.md) for the full design rationale, directory 
 | 4 | `testing-operator` | 12 | Done — envtest + Ginkgo test generation, per-method coverage |
 | 5 | `bundling-operator` | 15 | Done — OLM bundle, CSV, scorecard, certification readiness |
 | 6 | `operator-reviewer` (subagent) | 1 | Done — code review, composes skills 2+3, validated against ACM operator |
-| 7-8 | Subagents | — | Planned |
+| 7 | `operator-test-generator` (subagent) | 1 | Done — test generation, uses skill 4, 100% method coverage |
+| 8 | `operator-bundle-validator` (subagent) | — | Planned |
 
-**99 skill files + 1 subagent** across 5 skills, with 9 validation scripts, validated against operator-sdk and ACM.
+**99 skill files + 2 subagents** across 5 skills, with 9 validation scripts, validated against operator-sdk and ACM.
 
 ## Project Structure
 
@@ -52,10 +53,12 @@ agentic-operator-poc/
 │   ├── implementing-reconciliation/
 │   ├── testing-operator/
 │   ├── bundling-operator/
-│   └── operator-reviewer/
+│   ├── operator-reviewer/
+│   └── operator-test-generator/
 ├── .claude/
 │   ├── agents/                  # Subagent definitions
-│   │   └── operator-reviewer.md
+│   │   ├── operator-reviewer.md
+│   │   └── operator-test-generator.md
 │   └── skills/                  # Skill implementations
 │       ├── scaffolding-operator/       (29 files)
 │       ├── designing-operator-api/     (24 files)

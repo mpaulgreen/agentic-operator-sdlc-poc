@@ -53,7 +53,8 @@ agentic-operator-poc/
 └── .claude/
     ├── settings.local.json
     ├── agents/                        # Subagent definitions
-    │   └── operator-reviewer.md      # DONE — code review subagent
+    │   ├── operator-reviewer.md      # DONE — code review subagent
+    │   └── operator-test-generator.md # DONE — test generation subagent
     └── skills/                        # Skill implementations
         ├── scaffolding-operator/     # DONE — 29 files
         ├── designing-operator-api/   # DONE — 24 files
@@ -111,7 +112,7 @@ These knowledgebase operators provide real patterns for templates and examples:
 
 ## Current Status
 
-Sprints 1-6 complete. All 5 skills + `operator-reviewer` subagent built and validated.
+Sprints 1-7 complete. All 5 skills + 2 subagents (`operator-reviewer`, `operator-test-generator`) built and validated.
 
 ### Completed
 - **Sprint 1**: `scaffolding-operator` — 29 files
@@ -149,5 +150,9 @@ Sprints 1-6 complete. All 5 skills + `operator-reviewer` subagent built and vali
   - Test 6.1 PASS: Reviewed flawed operator — all 5 planted issues detected (3 by scripts, 2 by manual inspection), 0 false positives
   - Test 6.2 PASS: Reviewed clean database-operator — 0 false Critical findings, all 3 scripts PASS
 
+- **Sprint 7**: `operator-test-generator` — 1 agent definition (.claude/agents/operator-test-generator.md)
+  - Test 7.1 PASS: Full suite generated (4/4 methods discovered, 14 test cases, go vet passes, 100% coverage)
+  - Test 7.2 PASS: Incremental PDB tests added (5/5 methods, 16 test cases, existing tests preserved)
+
 ### Next
-- Sprint 7: `operator-test-generator` (subagent)
+- Sprint 8: `operator-bundle-validator` (subagent)

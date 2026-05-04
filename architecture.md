@@ -493,7 +493,7 @@ No new skills needed for higher levels — just deeper reference documents and m
 | `testing-operator` | 4 | **DONE** | 12 | 2 workflows (full suite, single method). 4 references, 2 scripts (coverage + test matrix), 4 templates, 1 example. |
 | `bundling-operator` | 5 | **DONE** | 15 | 2 workflows (initial bundle, version update). 6 references, 3 scripts (CSV + structure + scorecard), 4 templates, 1 example. Validated against database-operator bundle. |
 | `operator-reviewer` | 6 | **DONE** | 1 | Subagent definition (agent MD). Composes skills 2+3 (API design + reconciliation). Runs 3 validation scripts + manual checklist. Tested against flawed operator (5/5 issues detected) and clean database-operator (0 false positives). |
-| `operator-test-generator` | 7 | Pending | — | |
+| `operator-test-generator` | 7 | **DONE** | 1 | Subagent definition (agent MD). Uses skill 4 (testing-operator). Discovers methods, generates tests, validates with go vet + test matrix. Tested: 4/4→5/5 methods, 14→16 test cases. |
 | `operator-bundle-validator` | 8 | Pending | — | |
 
 ### Sprint 1 Lessons Learned
