@@ -54,7 +54,8 @@ agentic-operator-poc/
     ├── settings.local.json
     ├── agents/                        # Subagent definitions
     │   ├── operator-reviewer.md      # DONE — code review subagent
-    │   └── operator-test-generator.md # DONE — test generation subagent
+    │   ├── operator-test-generator.md # DONE — test generation subagent
+    │   └── operator-bundle-validator.md # DONE — bundle validation subagent
     └── skills/                        # Skill implementations
         ├── scaffolding-operator/     # DONE — 29 files
         ├── designing-operator-api/   # DONE — 24 files
@@ -112,7 +113,7 @@ These knowledgebase operators provide real patterns for templates and examples:
 
 ## Current Status
 
-Sprints 1-7 complete. All 5 skills + 2 subagents (`operator-reviewer`, `operator-test-generator`) built and validated.
+All 8 sprints complete. 5 skills (99 files) + 3 subagents built and validated.
 
 ### Completed
 - **Sprint 1**: `scaffolding-operator` — 29 files
@@ -154,5 +155,11 @@ Sprints 1-7 complete. All 5 skills + 2 subagents (`operator-reviewer`, `operator
   - Test 7.1 PASS: Full suite generated (4/4 methods discovered, 14 test cases, go vet passes, 100% coverage)
   - Test 7.2 PASS: Incremental PDB tests added (5/5 methods, 16 test cases, existing tests preserved)
 
-### Next
-- Sprint 8: `operator-bundle-validator` (subagent)
+- **Sprint 8**: `operator-bundle-validator` — 1 agent definition (.claude/agents/operator-bundle-validator.md)
+  - Test 8.1 PASS: Correct bundle validated (3/3 scripts pass, 7/8 certification checklist — only gap: empty icon)
+  - Test 8.2 PASS: Flawed bundle — all 4 planted issues detected (missing annotations, missing installModes, invalid alm-examples, non-existent descriptor path)
+
+### Status: ALL SPRINTS COMPLETE
+- 5 skills: scaffolding-operator (29), designing-operator-api (24), implementing-reconciliation (19), testing-operator (12), bundling-operator (15) = **99 skill files**
+- 3 subagents: operator-reviewer, operator-test-generator, operator-bundle-validator
+- Next: E2E scenario tests (Scenarios A, B, C, D from development-plan.md)

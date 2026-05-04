@@ -35,9 +35,9 @@ See [architecture.md](architecture.md) for the full design rationale, directory 
 | 5 | `bundling-operator` | 15 | Done — OLM bundle, CSV, scorecard, certification readiness |
 | 6 | `operator-reviewer` (subagent) | 1 | Done — code review, composes skills 2+3, validated against ACM operator |
 | 7 | `operator-test-generator` (subagent) | 1 | Done — test generation, uses skill 4, 100% method coverage |
-| 8 | `operator-bundle-validator` (subagent) | — | Planned |
+| 8 | `operator-bundle-validator` (subagent) | 1 | Done — bundle validation, certification readiness, uses skill 5 |
 
-**99 skill files + 2 subagents** across 5 skills, with 9 validation scripts, validated against operator-sdk and ACM.
+**99 skill files + 3 subagents** — all 8 sprints complete. 9 validation scripts, validated against operator-sdk and ACM.
 
 ## Project Structure
 
@@ -54,11 +54,13 @@ agentic-operator-poc/
 │   ├── testing-operator/
 │   ├── bundling-operator/
 │   ├── operator-reviewer/
-│   └── operator-test-generator/
+│   ├── operator-test-generator/
+│   └── operator-bundle-validator/
 ├── .claude/
 │   ├── agents/                  # Subagent definitions
 │   │   ├── operator-reviewer.md
-│   │   └── operator-test-generator.md
+│   │   ├── operator-test-generator.md
+│   │   └── operator-bundle-validator.md
 │   └── skills/                  # Skill implementations
 │       ├── scaffolding-operator/       (29 files)
 │       ├── designing-operator-api/     (24 files)

@@ -294,62 +294,12 @@ See `tests/operator-test-generator/gap_analysis.md` for comparison against manua
 ## Sprint 8: `operator-bundle-validator` (Subagent)
 
 ### Build
-Create the subagent definition:
-```
-.claude/agents/operator-bundle-validator.md
-```
 
-Assigns skills: `bundling-operator`
+1 agent definition at `.claude/agents/operator-bundle-validator.md`. Uses skill 5 (bundling-operator). Runs 3 validation scripts + certification checklist inspection.
 
-### Unit Test
+See `tests/operator-bundle-validator/test_guide.md` for full test prompts (including 4 issues to plant), verification commands, and acceptance criteria.
 
-**Test 8.1 — Validate correct bundle**
-```
-Prompt: "Validate the OLM bundle at /tmp/redis-operator-test/bundle/ 
-for correctness and certification readiness."
-```
-
-Expected output: 
-- Bundle structure: PASS
-- CSV validation: PASS with details on each section
-- Scorecard readiness: list of tests that would pass/fail
-- Certification checklist: items met / not met
-
-Acceptance criteria:
-- [ ] Clean bundle passes validation
-- [ ] Each validation category reported separately
-- [ ] Certification gaps identified (e.g., missing icon, no tests)
-
-**Test 8.2 — Validate bundle with deliberate issues**
-
-Plant these issues:
-1. Missing annotations.yaml
-2. CSV missing spec.installModes
-3. alm-examples with invalid YAML
-4. specDescriptor referencing non-existent field
-
-```
-Prompt: "Validate the bundle at /tmp/redis-operator-test/bundle/ and 
-report all issues found."
-```
-
-Acceptance criteria:
-- [ ] All 4 planted issues detected
-- [ ] Each issue has actionable fix suggestion
-- [ ] Issues categorized by severity
-
-### Integration Test (Subagent + Skill 5)
-
-**Test I-8 — Validate then fix**
-```
-Prompt: "Validate the bundle. For any issues found, fix them using 
-the bundling-operator skill and re-validate."
-```
-
-Acceptance criteria:
-- [ ] Issues identified
-- [ ] Fixes applied
-- [ ] Re-validation passes
+See `tests/operator-bundle-validator/gap_analysis.md` for comparison against `operator-sdk bundle validate`.
 
 ---
 

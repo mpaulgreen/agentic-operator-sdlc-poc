@@ -479,7 +479,7 @@ No new skills needed for higher levels — just deeper reference documents and m
 ```
 
 **Planned totals**: 5 skills, 25 reference docs, 9 scripts, 20+ templates, 8 examples, 3 subagents.
-**Actual (Sprints 1-5)**: 5 skills built with 99 files total (29 scaffolding + 24 API design + 19 reconciliation + 12 testing + 15 bundling).
+**Actual (Sprints 1-8)**: 5 skills (99 files) + 3 subagents (3 files) = 102 total. All components built and validated.
 
 ---
 
@@ -494,7 +494,7 @@ No new skills needed for higher levels — just deeper reference documents and m
 | `bundling-operator` | 5 | **DONE** | 15 | 2 workflows (initial bundle, version update). 6 references, 3 scripts (CSV + structure + scorecard), 4 templates, 1 example. Validated against database-operator bundle. |
 | `operator-reviewer` | 6 | **DONE** | 1 | Subagent definition (agent MD). Composes skills 2+3 (API design + reconciliation). Runs 3 validation scripts + manual checklist. Tested against flawed operator (5/5 issues detected) and clean database-operator (0 false positives). |
 | `operator-test-generator` | 7 | **DONE** | 1 | Subagent definition (agent MD). Uses skill 4 (testing-operator). Discovers methods, generates tests, validates with go vet + test matrix. Tested: 4/4→5/5 methods, 14→16 test cases. |
-| `operator-bundle-validator` | 8 | Pending | — | |
+| `operator-bundle-validator` | 8 | **DONE** | 1 | Subagent definition (agent MD). Uses skill 5 (bundling-operator). Runs 3 validation scripts + certification checklist. Tested: correct bundle (0 errors) + flawed bundle (4/4 issues detected). |
 
 ### Sprint 1 Lessons Learned
 
