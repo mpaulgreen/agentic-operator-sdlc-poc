@@ -92,6 +92,56 @@ Test artifacts organized by skill in `tests/<skill-name>/`:
 - `test_guide.md` — test prompts, verification commands, acceptance criteria
 - `gap_analysis.md` — comparison against operator-sdk output
 
+## Operator Development Workflow (MANDATORY)
+
+**DO NOT write operator code from training knowledge.** ALWAYS read the relevant SKILL.md or agent definition, follow its workflow, consult its templates and references, and run its validation script before proceeding to the next step.
+
+### Skills vs Subagents
+
+**Skills** (`.claude/skills/`) are knowledge bases for **generating** operator files. You read their SKILL.md, follow their workflow, use their templates, and run their validation scripts.
+
+**Subagents** (`.claude/agents/`) are orchestrated workflows for **verification, testing, and validation**. You read their agent definition and follow their step-by-step process. Subagents internally reference the relevant skills — you do NOT read the underlying SKILL.md yourself when using a subagent.
+
+|  | Skills | Subagents |
+|---|--------|-----------|
+| Purpose | Generate code | Verify / test / validate code |
+| Location | `.claude/skills/<name>/SKILL.md` | `.claude/agents/<name>.md` |
+| Work mode | Write files (one-time creation) | Read+analyze, Write+execute, Read+validate |
+| When to use | Creating new operator files | After files are created, to verify quality |
+| Re-runnable | No (one-time generation) | Yes (run after every change) |
+
+### New Operator (end-to-end)
+
+Follow this exact sequence from architecture.md Scenario A. Each step's validation is a **mandatory gate** — it MUST PASS before proceeding. Steps 4a and 4b run **in parallel**.
+
+| Step | Mode | Use | Read First | Action | Validate (MUST PASS) |
+|------|------|-----|------------|--------|---------------------|
+| 1 | Generate | `scaffolding-operator` **SKILL** | SKILL.md + templates | Generate scaffold + ALL config/ | `validate-project-structure.sh` |
+| 2 | Generate | `designing-operator-api` **SKILL** | SKILL.md + type-design-patterns + validation-markers | Generate types + deepcopy | `validate-api-types.py` + `go build ./api/...` |
+| 3 | Generate | `implementing-reconciliation` **SKILL** | SKILL.md + idempotency-patterns + rbac-annotations | Generate controller files | `validate-rbac-annotations.py` + `check-idempotency.py` + `go build` |
+| 4a | Test | `operator-test-generator` **SUBAGENT** | Agent definition (uses testing-operator skill internally) | Discover → Generate → Validate → Report | `generate-test-matrix.py` (100%) + `go vet` |
+| 4b | Review | `operator-reviewer` **SUBAGENT** | Agent definition (uses skills 2+3 internally) | Read → Run scripts → Inspect → Report | 0 Critical issues |
+| 5 | Generate | `bundling-operator` **SKILL** | SKILL.md + csv-anatomy + bundle-structure | Generate bundle files | `validate-bundle-structure.sh` + `validate-csv.py` + `check-scorecard-readiness.py` |
+| 6 | Validate | `operator-bundle-validator` **SUBAGENT** | Agent definition (uses bundling-operator skill internally) | Validate → Certification checklist → Report | All checks pass |
+
+### Task-to-Skill/Subagent Mapping
+
+| User Request | Use (SKILL or SUBAGENT) |
+|-------------|------------------------|
+| "Build/create a new operator" | SKILLs 1→2→3, then SUBAGENTs (test-gen + reviewer in parallel), then SKILL 5, then SUBAGENT (bundle-validator) |
+| "Add a field to the CRD" / "modify types" | `designing-operator-api` SKILL (Workflow B) |
+| "Add a resource/reconciler" | `implementing-reconciliation` SKILL (Workflow B) → `operator-test-generator` SUBAGENT (Workflow B) |
+| "Generate/run tests" | `operator-test-generator` SUBAGENT (NOT testing-operator skill directly) |
+| "Review the operator" | `operator-reviewer` SUBAGENT (NOT skills 2+3 directly) |
+| "Create OLM bundle" | `bundling-operator` SKILL (Workflow A or B) |
+| "Validate bundle / certification" | `operator-bundle-validator` SUBAGENT (NOT bundling-operator skill directly) |
+| "Add webhooks" | `designing-operator-api` SKILL (Workflow C) |
+| "Add API version" | `designing-operator-api` SKILL (Workflow D) |
+
+### Why This Matters
+
+Skills generate ~50+ files including the full `config/` kustomize structure that enables `make deploy`. Skipping them and writing files manually will miss critical infrastructure. Subagents orchestrate verification workflows that run the skill's validation scripts as mandatory gates — using a skill directly for testing or review bypasses the structured discovery and reporting the subagent provides.
+
 ## Key Conventions
 
 - Skills live under `.claude/skills/<skill-name>/`

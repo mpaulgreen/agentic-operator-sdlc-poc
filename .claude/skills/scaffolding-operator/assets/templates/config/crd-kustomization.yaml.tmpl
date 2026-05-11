@@ -1,0 +1,14 @@
+resources:
+- bases/{{API_GROUP}}.{{DOMAIN}}_{{KIND_PLURAL}}.yaml
+#+kubebuilder:scaffold:crdkustomizeresource
+
+# [WEBHOOK] To enable webhook, uncomment the following:
+# - patches/webhook_in_{{KIND_PLURAL}}.yaml
+#+kubebuilder:scaffold:crdkustomizewebhookpatch
+
+# [CERTMANAGER] To enable cert-manager, uncomment the following:
+# - patches/cainjection_in_{{KIND_PLURAL}}.yaml
+#+kubebuilder:scaffold:crdkustomizecainjectionpatch
+
+configurations:
+- kustomizeconfig.yaml

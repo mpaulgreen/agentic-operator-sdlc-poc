@@ -37,6 +37,8 @@ spec:
       kind: {{KIND}}
       name: {{KIND_PLURAL}}.{{GROUP}}
       version: {{API_VERSION}}
+      resources:
+      {{OWNED_RESOURCES}}
       specDescriptors:
       {{SPEC_DESCRIPTORS}}
       statusDescriptors:
@@ -75,31 +77,9 @@ spec:
             spec:
               containers:
               - args:
-                - --secure-listen-address=0.0.0.0:8443
-                - --upstream=http://127.0.0.1:8080/
-                - --logtostderr=true
-                - --v=0
-                image: gcr.io/kubebuilder/kube-rbac-proxy:v0.16.0
-                name: kube-rbac-proxy
-                ports:
-                - containerPort: 8443
-                  name: https
-                  protocol: TCP
-                resources:
-                  limits:
-                    cpu: 500m
-                    memory: 128Mi
-                  requests:
-                    cpu: 5m
-                    memory: 64Mi
-                securityContext:
-                  allowPrivilegeEscalation: false
-                  capabilities:
-                    drop:
-                    - ALL
-              - args:
                 - --health-probe-bind-address=:8081
-                - --metrics-bind-address=127.0.0.1:8080
+                - --metrics-bind-address=:8443
+                - --metrics-secure=true
                 - --leader-elect
                 command:
                 - /manager

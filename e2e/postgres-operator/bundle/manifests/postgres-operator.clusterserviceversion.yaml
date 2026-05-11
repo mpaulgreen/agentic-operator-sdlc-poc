@@ -1,0 +1,329 @@
+apiVersion: operators.coreos.com/v1alpha1
+kind: ClusterServiceVersion
+metadata:
+  annotations:
+    alm-examples: |-
+      [
+        {
+          "apiVersion": "database.postgres.example.com/v1alpha1",
+          "kind": "PostgresCluster",
+          "metadata": {
+            "labels": {
+              "app.kubernetes.io/managed-by": "kustomize",
+              "app.kubernetes.io/name": "postgres-operator"
+            },
+            "name": "postgrescluster-sample"
+          },
+          "spec": {
+            "replicas": 3,
+            "version": "16",
+            "storage": {
+              "size": "10Gi"
+            },
+            "resources": {
+              "requests": {
+                "cpu": "500m",
+                "memory": "512Mi"
+              },
+              "limits": {
+                "cpu": "1",
+                "memory": "1Gi"
+              }
+            },
+            "backup": {
+              "enabled": true,
+              "schedule": "0 2 * * *",
+              "retentionDays": 7
+            }
+          }
+        }
+      ]
+    capabilities: Basic Install
+    categories: Database
+    certified: "false"
+    createdAt: "2026-05-01T00:00:00Z"
+    operators.operatorframework.io/builder: operator-sdk-v1.37.0
+    operators.operatorframework.io/project_layout: go.kubebuilder.io/v4
+    repository: https://github.com/example/postgres-operator
+  name: postgres-operator.v0.1.0
+  namespace: placeholder
+spec:
+  apiservicedefinitions: {}
+  customresourcedefinitions:
+    owned:
+    - description: PostgresCluster is the Schema for the postgresclusters API
+      displayName: Postgres Cluster
+      kind: PostgresCluster
+      name: postgresclusters.database.postgres.example.com
+      version: v1alpha1
+      resources:
+      - kind: StatefulSet
+        version: v1
+      - kind: Service
+        version: v1
+      - kind: Secret
+        version: v1
+      - kind: ConfigMap
+        version: v1
+      - kind: CronJob
+        version: v1
+      specDescriptors:
+      - path: replicas
+        displayName: Replicas
+        description: Number of PostgreSQL instances to run
+      - path: version
+        displayName: Version
+        description: PostgreSQL major version to deploy
+      - path: storage
+        displayName: Storage
+        description: Persistent storage configuration
+      - path: resources
+        displayName: Resources
+        description: CPU and memory resource requirements
+      - path: backup
+        displayName: Backup
+        description: Backup configuration
+      statusDescriptors:
+      - path: phase
+        displayName: Phase
+        description: Current lifecycle phase of the PostgresCluster
+      - path: readyReplicas
+        displayName: Ready Replicas
+        description: Number of PostgreSQL instances that are ready
+      - path: currentVersion
+        displayName: Current Version
+        description: Currently running PostgreSQL version
+      - path: endpoint
+        displayName: Endpoint
+        description: Connection endpoint for the PostgreSQL cluster
+      - path: conditions
+        displayName: Conditions
+        description: Latest available observations of the resource state
+  description: |
+    ## Overview
+    The PostgreSQL Operator manages PostgreSQL clusters on Kubernetes.
+    It automates deployment, scaling, backup, and lifecycle management of
+    PostgreSQL instances using StatefulSets, Services, Secrets, ConfigMaps,
+    and CronJobs for scheduled backups.
+  displayName: PostgreSQL Operator
+  icon:
+  - base64data: ""
+    mediatype: "image/svg+xml"
+  install:
+    spec:
+      clusterPermissions:
+      - rules:
+        - apiGroups:
+          - database.postgres.example.com
+          resources:
+          - postgresclusters
+          verbs:
+          - get
+          - list
+          - watch
+          - create
+          - update
+          - patch
+          - delete
+        - apiGroups:
+          - database.postgres.example.com
+          resources:
+          - postgresclusters/status
+          verbs:
+          - get
+          - update
+          - patch
+        - apiGroups:
+          - database.postgres.example.com
+          resources:
+          - postgresclusters/finalizers
+          verbs:
+          - update
+        - apiGroups:
+          - ""
+          resources:
+          - events
+          verbs:
+          - create
+          - patch
+        - apiGroups:
+          - ""
+          resources:
+          - secrets
+          verbs:
+          - get
+          - list
+          - watch
+          - create
+          - update
+          - patch
+          - delete
+        - apiGroups:
+          - ""
+          resources:
+          - configmaps
+          verbs:
+          - get
+          - list
+          - watch
+          - create
+          - update
+          - patch
+          - delete
+        - apiGroups:
+          - ""
+          resources:
+          - services
+          verbs:
+          - get
+          - list
+          - watch
+          - create
+          - update
+          - patch
+          - delete
+        - apiGroups:
+          - apps
+          resources:
+          - statefulsets
+          verbs:
+          - get
+          - list
+          - watch
+          - create
+          - update
+          - patch
+          - delete
+        - apiGroups:
+          - batch
+          resources:
+          - cronjobs
+          verbs:
+          - get
+          - list
+          - watch
+          - create
+          - update
+          - patch
+          - delete
+        serviceAccountName: postgres-operator-controller-manager
+      deployments:
+      - label:
+          app.kubernetes.io/managed-by: kustomize
+          app.kubernetes.io/name: postgres-operator
+          control-plane: controller-manager
+        name: postgres-operator-controller-manager
+        spec:
+          replicas: 1
+          selector:
+            matchLabels:
+              control-plane: controller-manager
+          strategy: {}
+          template:
+            metadata:
+              annotations:
+                kubectl.kubernetes.io/default-container: manager
+              labels:
+                control-plane: controller-manager
+            spec:
+              containers:
+              - args:
+                - --health-probe-bind-address=:8081
+                - --metrics-bind-address=:8443
+                - --metrics-secure=true
+                - --leader-elect
+                command:
+                - /manager
+                image: quay.io/mpaulgreen/postgres-operator:v0.1.0
+                livenessProbe:
+                  httpGet:
+                    path: /healthz
+                    port: 8081
+                  initialDelaySeconds: 15
+                  periodSeconds: 20
+                name: manager
+                readinessProbe:
+                  httpGet:
+                    path: /readyz
+                    port: 8081
+                  initialDelaySeconds: 5
+                  periodSeconds: 10
+                resources:
+                  limits:
+                    cpu: 500m
+                    memory: 128Mi
+                  requests:
+                    cpu: 10m
+                    memory: 64Mi
+                securityContext:
+                  allowPrivilegeEscalation: false
+                  capabilities:
+                    drop:
+                    - ALL
+              securityContext:
+                runAsNonRoot: true
+              serviceAccountName: postgres-operator-controller-manager
+              terminationGracePeriodSeconds: 10
+      permissions:
+      - rules:
+        - apiGroups:
+          - ""
+          resources:
+          - configmaps
+          verbs:
+          - get
+          - list
+          - watch
+          - create
+          - update
+          - patch
+          - delete
+        - apiGroups:
+          - coordination.k8s.io
+          resources:
+          - leases
+          verbs:
+          - get
+          - list
+          - watch
+          - create
+          - update
+          - patch
+          - delete
+        - apiGroups:
+          - ""
+          resources:
+          - events
+          verbs:
+          - create
+          - patch
+        serviceAccountName: postgres-operator-controller-manager
+    strategy: deployment
+  installModes:
+  - supported: true
+    type: OwnNamespace
+  - supported: true
+    type: SingleNamespace
+  - supported: false
+    type: MultiNamespace
+  - supported: true
+    type: AllNamespaces
+  keywords:
+  - postgresql
+  - database
+  - postgres
+  - sql
+  links:
+  - name: Documentation
+    url: https://github.com/example/postgres-operator
+  - name: Source Code
+    url: https://github.com/example/postgres-operator
+  maintainers:
+  - email: maintainer@example.com
+    name: Maintainer
+  maturity: alpha
+  minKubeVersion: "1.25.0"
+  provider:
+    name: Example
+    url: https://example.com
+  version: 0.1.0

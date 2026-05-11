@@ -1,0 +1,214 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.14.0
+  name: postgresclusters.database.postgres.example.com
+spec:
+  group: database.postgres.example.com
+  names:
+    kind: PostgresCluster
+    listKind: PostgresClusterList
+    plural: postgresclusters
+    singular: postgrescluster
+  scope: Namespaced
+  versions:
+    - additionalPrinterColumns:
+        - jsonPath: .status.phase
+          name: Phase
+          type: string
+        - jsonPath: .status.readyReplicas
+          name: Ready
+          type: integer
+        - jsonPath: .status.currentVersion
+          name: Version
+          type: string
+        - jsonPath: .metadata.creationTimestamp
+          name: Age
+          type: date
+      name: v1alpha1
+      schema:
+        openAPIV3Schema:
+          description: PostgresCluster is the Schema for the postgresclusters API.
+          properties:
+            apiVersion:
+              description: >-
+                APIVersion defines the versioned schema of this representation of
+                an object.
+              type: string
+            kind:
+              description: >-
+                Kind is a string value representing the REST resource this object
+                represents.
+              type: string
+            metadata:
+              type: object
+            spec:
+              description: PostgresClusterSpec defines the desired state of PostgresCluster.
+              properties:
+                backup:
+                  description: Backup defines the optional backup configuration.
+                  properties:
+                    enabled:
+                      default: false
+                      description: Enabled indicates whether automated backups are active.
+                      type: boolean
+                    retentionDays:
+                      default: 7
+                      description: RetentionDays is the number of days to retain backups.
+                      format: int32
+                      maximum: 30
+                      minimum: 1
+                      type: integer
+                    schedule:
+                      description: Schedule is the cron expression for backup frequency.
+                      type: string
+                  required:
+                    - schedule
+                  type: object
+                replicas:
+                  default: 3
+                  description: Replicas is the number of PostgreSQL instances to run.
+                  format: int32
+                  maximum: 5
+                  minimum: 1
+                  type: integer
+                resources:
+                  description: Resources defines the CPU and memory resource requirements.
+                  properties:
+                    claims:
+                      items:
+                        description: ResourceClaim references one entry in PodSpec.ResourceClaims.
+                        properties:
+                          name:
+                            type: string
+                        required:
+                          - name
+                        type: object
+                      type: array
+                      x-kubernetes-list-map-keys:
+                        - name
+                      x-kubernetes-list-type: map
+                    limits:
+                      additionalProperties:
+                        anyOf:
+                          - type: integer
+                          - type: string
+                        pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                        x-kubernetes-int-or-string: true
+                      type: object
+                    requests:
+                      additionalProperties:
+                        anyOf:
+                          - type: integer
+                          - type: string
+                        pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                        x-kubernetes-int-or-string: true
+                      type: object
+                  type: object
+                storage:
+                  description: StorageSpec defines storage configuration for PostgreSQL data.
+                  properties:
+                    size:
+                      description: Size is the storage volume size (e.g., "10Gi").
+                      pattern: ^[0-9]+[KMGT]i$
+                      type: string
+                    storageClassName:
+                      description: StorageClassName is the name of the StorageClass to use.
+                      type: string
+                  required:
+                    - size
+                  type: object
+                version:
+                  default: "16"
+                  description: Version is the PostgreSQL major version to deploy.
+                  enum:
+                    - "14"
+                    - "15"
+                    - "16"
+                  type: string
+              required:
+                - storage
+              type: object
+            status:
+              description: PostgresClusterStatus defines the observed state of PostgresCluster.
+              properties:
+                conditions:
+                  items:
+                    description: >-
+                      Condition contains details for one aspect of the current state
+                      of this API Resource.
+                    properties:
+                      lastTransitionTime:
+                        description: >-
+                          lastTransitionTime is the last time the condition
+                          transitioned from one status to another.
+                        format: date-time
+                        type: string
+                      message:
+                        description: message is a human readable message indicating details.
+                        maxLength: 32768
+                        type: string
+                      observedGeneration:
+                        description: >-
+                          observedGeneration represents the .metadata.generation
+                          that the condition was set based upon.
+                        format: int64
+                        minimum: 0
+                        type: integer
+                      reason:
+                        description: >-
+                          reason contains a programmatic identifier indicating
+                          the reason for the condition's last transition.
+                        maxLength: 1024
+                        minLength: 1
+                        pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                        type: string
+                      status:
+                        description: status of the condition, one of True, False, Unknown.
+                        enum:
+                          - "True"
+                          - "False"
+                          - Unknown
+                        type: string
+                      type:
+                        description: type of condition in CamelCase.
+                        maxLength: 316
+                        pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                        type: string
+                    required:
+                      - lastTransitionTime
+                      - message
+                      - reason
+                      - status
+                      - type
+                    type: object
+                  type: array
+                currentVersion:
+                  description: CurrentVersion is the currently running PostgreSQL version.
+                  type: string
+                endpoint:
+                  description: Endpoint is the connection endpoint for the PostgreSQL cluster.
+                  type: string
+                phase:
+                  description: >-
+                    Phase represents the current lifecycle phase of the
+                    PostgresCluster.
+                  enum:
+                    - Pending
+                    - Initializing
+                    - Running
+                    - Failed
+                    - Degraded
+                  type: string
+                readyReplicas:
+                  description: ReadyReplicas is the number of PostgreSQL instances that are ready.
+                  format: int32
+                  type: integer
+              type: object
+          type: object
+      served: true
+      storage: true
+      subresources:
+        status: {}

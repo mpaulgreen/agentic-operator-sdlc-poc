@@ -1,5 +1,5 @@
 /*
-Copyright {{YEAR}}.
+Copyright 2026.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -35,8 +35,8 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
-	{{API_GROUP}}{{API_VERSION}} "{{REPO_PATH}}/api/{{API_VERSION}}"
-	"{{REPO_PATH}}/internal/controller"
+	databasev1alpha1 "github.com/example/postgres-operator/api/v1alpha1"
+	"github.com/example/postgres-operator/internal/controller"
 	//+kubebuilder:scaffold:imports
 )
 
@@ -48,7 +48,7 @@ var (
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 
-	utilruntime.Must({{API_GROUP}}{{API_VERSION}}.AddToScheme(scheme))
+	utilruntime.Must(databasev1alpha1.AddToScheme(scheme))
 	//+kubebuilder:scaffold:scheme
 }
 
@@ -106,7 +106,7 @@ func main() {
 		WebhookServer:          webhookServer,
 		HealthProbeBindAddress: probeAddr,
 		LeaderElection:         enableLeaderElection,
-		LeaderElectionID:       "{{LEADER_ELECTION_ID}}",
+		LeaderElectionID:       "a1b2c3d4.postgres.example.com",
 		// LeaderElectionReleaseOnCancel defines if the leader should step down voluntarily
 		// when the Manager ends. This requires the binary to immediately end when the
 		// Manager is stopped, otherwise, this setting is unsafe. Setting this significantly
@@ -124,12 +124,12 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err = (&controller.{{KIND}}Reconciler{
+	if err = (&controller.PostgresClusterReconciler{
 		Client:   mgr.GetClient(),
 		Scheme:   mgr.GetScheme(),
-		Recorder: mgr.GetEventRecorderFor("{{OPERATOR_NAME}}"),
+		Recorder: mgr.GetEventRecorderFor("postgres-operator"),
 	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "{{KIND}}")
+		setupLog.Error(err, "unable to create controller", "controller", "PostgresCluster")
 		os.Exit(1)
 	}
 	//+kubebuilder:scaffold:builder

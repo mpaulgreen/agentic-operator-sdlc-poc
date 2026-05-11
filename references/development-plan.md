@@ -53,7 +53,7 @@ Each sprint follows: **Build skill → Unit test → Integration test with prior
 
 ### Build
 
-29 files in `.claude/skills/scaffolding-operator/` (1 SKILL.md, 3 references, 1 script with 48 checks, 25 templates). Validated against `operator-sdk` v1.37.0.
+27 files in `.claude/skills/scaffolding-operator/` (1 SKILL.md, 3 references, 1 script with 49 checks, 22 templates). Validated against `operator-sdk` v1.37.0. Updated: removed kube-rbac-proxy sidecar templates (deprecated in operator-sdk v1.33+), added metrics-service and metrics-reader-clusterrole. Dockerfile uses `FROM --platform=$BUILDPLATFORM` for cross-compilation on Apple Silicon.
 
 See `tests/scaffolding-operator/test_guide.md` for full test prompts, verification commands, and acceptance criteria across all 4 patterns.
 
@@ -305,9 +305,17 @@ See `tests/operator-bundle-validator/gap_analysis.md` for comparison against `op
 
 ## E2E Scenario Tests (After All Sprints)
 
-These test complete workflows across all skills and subagents.
+These test complete workflows across all skills and subagents. Scenario A has been executed and deployed to a live OpenShift cluster.
 
-> **Note (from Sprint 4 Test 4.3):** The SDK generates E2E test skeletons (`test/e2e/`) that our testing-operator skill does not currently generate. E2E tests require a real cluster and are not practical during skill development. Once all 5 skills and 3 subagents are built, add E2E test generation support to the testing-operator skill (using `assets/templates/e2e_test.go.tmpl` as a starting point) and validate during the E2E scenario tests below.
+> **Mandatory workflow (from CLAUDE.md):** E2E tests MUST follow the skill/subagent workflow: Skills for generation (Steps 1-3, 5), Subagents for verification (Steps 4a, 4b, 6). Do NOT write operator code from training knowledge.
+
+> **Lessons learned from Scenario A on OpenShift:**
+> 1. **kube-rbac-proxy image defunct** — removed sidecar, use controller-runtime built-in `filters.WithAuthenticationAndAuthorization`
+> 2. **Dockerfile QEMU crash on Apple Silicon** — use `FROM --platform=$BUILDPLATFORM` for native cross-compilation
+> 3. **Upstream container images crash on OpenShift** — use `registry.redhat.io/rhel9/postgresql-16` (not `postgres:16`), env vars use `POSTGRESQL_*` prefix, data dir `/var/lib/pgsql/data`
+> 4. All three issues resulted in skill template updates so future operators don't hit them.
+>
+> See `e2e/openshift-e2e-validation.md` for the full OpenShift cluster validation guide (31 test conditions across 12 phases).
 
 ### Scenario A: New Operator from Scratch
 
@@ -340,14 +348,17 @@ Review the code for best practices before finalizing."
 
 Verification — run ALL validation scripts, compile, test, bundle validate.
 
-Acceptance criteria:
-- [ ] Complete project structure valid
-- [ ] Types compile with all markers
-- [ ] Controller compiles with 5 reconciler methods
-- [ ] Tests compile and cover all methods
-- [ ] Bundle valid with matching descriptors
-- [ ] Code review shows no Critical issues
-- [ ] Total files created: ~25-30
+Acceptance criteria (Scenario A EXECUTED — all pass):
+- [x] Complete project structure valid (49/49 scaffold checks)
+- [x] Types compile with all markers (14/14 type checks)
+- [x] Controller compiles with 5 reconciler methods (9 RBAC, 5/5 idempotent)
+- [x] Tests compile and cover all methods (5/5, 16 test cases)
+- [x] Bundle valid with matching descriptors (3/3 scripts, 0 warnings)
+- [x] Code review shows no Critical issues (0 Critical, 0 Warning)
+- [x] Total files created: 53 (including full config/ kustomize structure)
+- [x] Deployed to OpenShift: 3/3 PostgreSQL pods Running, Phase=Running
+
+Output at `e2e/postgres-operator/`. OpenShift validation guide at `e2e/openshift-e2e-validation.md`.
 
 ---
 

@@ -1,7 +1,7 @@
 # Build the manager binary using native cross-compilation
 # --platform=$BUILDPLATFORM runs the build on the host architecture (e.g., arm64 on Mac)
 # while GOARCH=${TARGETARCH} cross-compiles the binary for the target (e.g., amd64 for OpenShift)
-FROM --platform=$BUILDPLATFORM golang:{{GO_VERSION}} AS builder
+FROM --platform=$BUILDPLATFORM golang:1.22 AS builder
 ARG TARGETARCH
 
 WORKDIR /workspace
@@ -18,17 +18,14 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} go build -a -o manager cmd/mai
 FROM registry.access.redhat.com/ubi9/ubi-micro:latest
 
 # Red Hat required labels for certification
-LABEL name="{{OPERATOR_NAME}}" \
-      vendor="{{PROVIDER_NAME}}" \
-      version="{{VERSION}}" \
-      summary="{{DISPLAY_NAME}}" \
-      description="{{DESCRIPTION}}" \
-      io.k8s.display-name="{{DISPLAY_NAME}}" \
-      io.k8s.description="{{DESCRIPTION}}" \
-      io.openshift.tags="operator,{{API_GROUP}}"
-
-# Copy license
-COPY --from=builder /workspace/LICENSE /licenses/LICENSE
+LABEL name="postgres-operator" \
+      vendor="Example" \
+      version="0.1.0" \
+      summary="PostgresCluster Operator" \
+      description="Manages PostgresCluster resources on OpenShift" \
+      io.k8s.display-name="PostgresCluster Operator" \
+      io.k8s.description="Manages PostgresCluster resources on OpenShift" \
+      io.openshift.tags="operator,database"
 
 WORKDIR /
 COPY --from=builder /workspace/manager .

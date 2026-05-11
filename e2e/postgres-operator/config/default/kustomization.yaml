@@ -1,0 +1,20 @@
+namespace: postgres-operator-system
+
+namePrefix: postgres-operator-
+
+resources:
+- ../crd
+- ../rbac
+- ../manager
+
+# [PROMETHEUS] To enable prometheus monitor, uncomment the following:
+# - ../prometheus
+
+# [WEBHOOK] To enable webhook, uncomment the following:
+# - ../webhook
+
+# [CERTMANAGER] To enable cert-manager, uncomment the following:
+# - ../certmanager
+
+patches:
+- path: manager_config_patch.yaml

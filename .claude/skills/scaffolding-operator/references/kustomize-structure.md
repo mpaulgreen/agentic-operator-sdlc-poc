@@ -10,12 +10,11 @@ Top-level kustomization that combines all other bases.
 - `namespace: {{OPERATOR_NAME}}-system`
 - `namePrefix: {{OPERATOR_NAME}}-`
 - Resources: `../crd`, `../rbac`, `../manager`
-- Patches: `manager_auth_proxy_patch.yaml` (enables kube-rbac-proxy sidecar for secure metrics)
 - Contains commented-out sections for webhook, cert-manager, prometheus enablement
 
-**manager_auth_proxy_patch.yaml**: Kustomize patch that injects a kube-rbac-proxy sidecar container into the controller-manager Deployment for secure metrics endpoint (port 8443).
-
 **manager_config_patch.yaml**: Kustomize patch for additional manager Deployment configuration.
+
+> **Note**: Previous versions used a `manager_auth_proxy_patch.yaml` to inject a `kube-rbac-proxy` sidecar for secure metrics. This is deprecated since operator-sdk v1.33+. Controller-runtime v0.17+ provides built-in metrics authentication via `filters.WithAuthenticationAndAuthorization` in `main.go`. The manager serves authenticated HTTPS metrics directly on port 8443 — no sidecar needed.
 
 ## config/manager/
 
@@ -25,8 +24,9 @@ Controller manager Deployment.
 - Resources: `manager.yaml`
 - Images: maps `controller` → actual registry image
 
-**manager.yaml** (Deployment):
-- Namespace `system` (kustomize prefixes to `{{OPERATOR_NAME}}-system`)
+**manager.yaml** (Namespace + Deployment — TWO resources separated by `---`):
+- First resource: `kind: Namespace` with `name: system` (kustomize prefixes to `{{OPERATOR_NAME}}-system`). Without this, `make deploy` fails because namespace-scoped resources are created before the namespace exists.
+- Second resource: `kind: Deployment` in namespace `system`
 - 1 replica
 - Labels: `control-plane: controller-manager`, `app.kubernetes.io/name: {{OPERATOR_NAME}}`
 - Container:
@@ -83,13 +83,9 @@ subjects:
 
 **leader_election_role.yaml**: Role granting access to leases, configmaps, events in the operator namespace for leader election.
 
-**auth_proxy_client_clusterrole.yaml**: ClusterRole `metrics-reader` granting GET on `/metrics` non-resource URL.
+**metrics_reader_clusterrole.yaml**: ClusterRole `metrics-reader` granting GET on `/metrics` non-resource URL. Used by Prometheus to scrape operator metrics.
 
-**auth_proxy_role.yaml**: ClusterRole `proxy-role` granting tokenreviews and subjectaccessreviews for kube-rbac-proxy.
-
-**auth_proxy_role_binding.yaml**: Binds `proxy-role` to `controller-manager` ServiceAccount.
-
-**auth_proxy_service.yaml**: Service `controller-manager-metrics-service` exposing port 8443 for HTTPS metrics via kube-rbac-proxy.
+**metrics_service.yaml**: Service `controller-manager-metrics-service` exposing port 8443 for HTTPS metrics served directly by the controller-manager (using controller-runtime's built-in auth, no sidecar).
 
 **<kind_lower>_editor_role.yaml**: ClusterRole granting end users full CRUD on the custom resource.
 

@@ -1,0 +1,19 @@
+domain: postgres.example.com
+layout:
+- go.kubebuilder.io/v4
+plugins:
+  manifests.sdk.operatorframework.io/v2: {}
+  scorecard.sdk.operatorframework.io/v2: {}
+projectName: postgres-operator
+repo: github.com/example/postgres-operator
+resources:
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: postgres.example.com
+  group: database
+  kind: PostgresCluster
+  path: github.com/example/postgres-operator/api/v1alpha1
+  version: v1alpha1
+version: "3"

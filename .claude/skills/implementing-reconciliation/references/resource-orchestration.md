@@ -71,6 +71,28 @@ controllerutil.SetControllerReference(cr, object, r.Scheme)
 
 Sets `metadata.ownerReferences[0]` with `controller: true`, `blockOwnerDeletion: true`. One controller reference per object (cannot have two controllers).
 
+## OpenShift-Compatible Container Images
+
+Upstream Docker Hub images (postgres, redis, mysql, mongo) assume they run as root or a fixed UID. OpenShift runs containers with a **random UID** under the `restricted` SCC — these images crash with `chmod: Operation not permitted`.
+
+Use Red Hat Software Collections (SCL) or UBI-based images instead:
+
+| Upstream Image | OpenShift-Compatible Image |
+|---------------|---------------------------|
+| `postgres:16` | `registry.redhat.io/rhel9/postgresql-16` |
+| `redis:7.2` | `registry.redhat.io/rhel9/redis-7` |
+| `mysql:8.0` | `registry.redhat.io/rhel9/mysql-80` |
+| `mongo:7.0` | `registry.redhat.io/rhel9/mongodb-70` (community: `quay.io/sclorg/mongodb-70-c9s`) |
+
+**Key differences in SCL images:**
+- Run as arbitrary UID (no chmod on startup)
+- Env vars use `POSTGRESQL_*` prefix (not `POSTGRES_*`)
+- Data directory: `/var/lib/pgsql/data` (not `/var/lib/postgresql/data`)
+- Config directory: `/opt/app-root/src/postgresql-cfg/` (not `/etc/postgresql/`)
+- Community equivalents available at `quay.io/sclorg/` (no subscription needed)
+
+When the target platform is OpenShift, always use OpenShift-compatible images in resource builders.
+
 ## Scaling to 10+ Resources
 
 For complex operators, use a generic helper:

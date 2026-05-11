@@ -1,0 +1,10 @@
+resources:
+- service_account.yaml
+- role.yaml
+- role_binding.yaml
+- leader_election_role.yaml
+- leader_election_role_binding.yaml
+- metrics_reader_clusterrole.yaml
+- metrics_service.yaml
+- postgrescluster_editor_role.yaml
+- postgrescluster_viewer_role.yaml

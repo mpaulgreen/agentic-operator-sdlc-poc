@@ -1,5 +1,5 @@
 VERSION ?= 0.1.0
-OPERATOR_NAME ?= {{OPERATOR_NAME}}
+OPERATOR_NAME ?= postgres-operator
 CHANNELS ?= alpha
 DEFAULT_CHANNEL ?= alpha
 
@@ -12,7 +12,7 @@ BUNDLE_DEFAULT_CHANNEL := --default-channel=$(DEFAULT_CHANNEL)
 endif
 BUNDLE_METADATA_OPTS ?= $(BUNDLE_CHANNELS) $(BUNDLE_DEFAULT_CHANNEL)
 
-IMAGE_TAG_BASE ?= {{IMAGE_TAG_BASE}}
+IMAGE_TAG_BASE ?= quay.io/example/postgres-operator
 
 BUNDLE_IMG ?= $(IMAGE_TAG_BASE)-bundle:v$(VERSION)
 
@@ -33,7 +33,7 @@ else
 GOBIN=$(shell go env GOBIN)
 endif
 
-CONTAINER_TOOL ?= {{CONTAINER_TOOL}}
+CONTAINER_TOOL ?= podman
 
 SHELL = /usr/bin/env bash -o pipefail
 .SHELLFLAGS = -ec
@@ -102,7 +102,7 @@ docker-push: ## Push docker image with the manager.
 PLATFORMS ?= linux/arm64,linux/amd64,linux/s390x,linux/ppc64le
 .PHONY: docker-buildx
 docker-buildx: ## Build and push docker image for cross-platform support
-	sed -e '1 s/\(^FROM\)/FROM --platform=\$$\{BUILDPLATFORM\}/; t' -e ' 1,// s//FROM --platform=\$$\{BUILDPLATFORM\}/' Dockerfile > Dockerfile.cross
+	sed -e '1 s/\(^FROM\)/FROM --platform=$$\{BUILDPLATFORM\}/; t' -e ' 1,// s//FROM --platform=$$\{BUILDPLATFORM\}/' Dockerfile > Dockerfile.cross
 	- $(CONTAINER_TOOL) buildx create --name project-v3-builder
 	$(CONTAINER_TOOL) buildx use project-v3-builder
 	- $(CONTAINER_TOOL) buildx build --push --platform=$(PLATFORMS) --tag ${IMG} -f Dockerfile.cross .
