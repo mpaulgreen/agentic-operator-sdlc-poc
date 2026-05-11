@@ -73,7 +73,9 @@ if err == nil {
 }
 ```
 
-**Key rule**: When you modify a builder to add a new field (e.g., Affinity), you must ALSO add a comparison for that field in the check-update section. Otherwise the field is only set on creation and never applied to existing resources.
+**Key rule**: Every mutable spec field set in the builder MUST have a corresponding comparison in the check-update section. When modifying a reconciler, audit ALL builder fields — not just the one you're adding. Fields that were already missing check-update coverage are bugs; fix them while you're in the file.
+
+**Common mutable fields for StatefulSet/Deployment**: replicas, image, resources (CPU/memory), affinity, tolerations, env vars, volume mounts. All of these can change when the user updates the CR spec and must be reconciled on existing resources.
 
 ## Server-Side Apply (Modern Alternative)
 

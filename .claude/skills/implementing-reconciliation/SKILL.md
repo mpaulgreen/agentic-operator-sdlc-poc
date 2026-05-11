@@ -92,8 +92,8 @@ Use when the user wants to add a new reconciled resource or modify what an exist
 
 **Modifying an existing reconciler** (e.g., "add anti-affinity to the StatefulSet"):
 
-7. If you change what the builder produces (e.g., adding affinity, tolerations, volumes, env vars to the StatefulSet template), you **must also update the check-update section** to compare all changed fields on existing resources. Otherwise the new fields are only set during creation and never applied to already-running resources.
-8. For complex nested fields (affinity, tolerations, volumes), use a helper with `reflect.DeepEqual` or struct comparison — see `references/idempotency-patterns.md` "Check-Update for Complex Fields".
+7. When modifying an existing reconciler, **audit the entire check-update section** — not just the field you're adding. Verify that ALL mutable spec fields set in the builder have corresponding comparisons in the check-update path. Fields that were missing check-update coverage before your change are still bugs — fix them while you're in the file. Common fields that need check-update on mutable resources (StatefulSet, Deployment): replicas, image, resources, affinity, tolerations, env vars, volume mounts.
+8. For complex nested fields (affinity, tolerations, volumes, resources), use a helper with `reflect.DeepEqual` or struct comparison — see `references/idempotency-patterns.md` "Check-Update for Complex Fields".
 9. Batch multiple field comparisons into a single `r.Update()` call to avoid unnecessary API calls.
 
 ## Check-Create Idempotency Pattern

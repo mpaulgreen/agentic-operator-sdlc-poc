@@ -2,12 +2,12 @@ resources:
 - bases/database.postgres.example.com_postgresclusters.yaml
 #+kubebuilder:scaffold:crdkustomizeresource
 
-# [WEBHOOK] To enable webhook, uncomment the following:
-# - patches/webhook_in_postgresclusters.yaml
+# [WEBHOOK]
+patches:
+- path: patches/webhook_in_postgresclusters.yaml
 #+kubebuilder:scaffold:crdkustomizewebhookpatch
 
-# [CERTMANAGER] To enable cert-manager, uncomment the following:
-# - patches/cainjection_in_postgresclusters.yaml
+# [CERTMANAGER]
 #+kubebuilder:scaffold:crdkustomizecainjectionpatch
 
 configurations:

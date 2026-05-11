@@ -2,7 +2,7 @@ apiVersion: cert-manager.io/v1
 kind: Issuer
 metadata:
   labels:
-    app.kubernetes.io/name: {{OPERATOR_NAME}}
+    app.kubernetes.io/name: postgres-operator
     app.kubernetes.io/managed-by: kustomize
   name: selfsigned-issuer
   namespace: system
@@ -13,7 +13,7 @@ apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
   labels:
-    app.kubernetes.io/name: {{OPERATOR_NAME}}
+    app.kubernetes.io/name: postgres-operator
     app.kubernetes.io/managed-by: kustomize
   name: serving-cert
   namespace: system

@@ -1313,3 +1313,528 @@ sleep 15
 | 23 | HA descriptors in CSV | B.12 | ha.* fields present |
 | 24 | PDB RBAC in CSV | B.12 | policy/poddisruptionbudgets |
 | 25 | PDB in owned resources | B.12 | PodDisruptionBudget listed |
+
+---
+---
+
+# Scenario C: Webhooks + Network Security (v0.3.0)
+
+Adds defaulting/validating admission webhooks + NetworkPolicy to the postgres-operator. Built using:
+- **Step 1** (Generate): `designing-operator-api` SKILL (Workflow C) — Added webhook handler + 9 config files
+- **Step 2** (Generate): `implementing-reconciliation` SKILL (Workflow B) — Added reconcileNetworkPolicy
+- **Step 3a** (Test): `operator-test-generator` SUBAGENT (Workflow B) — Added NP + webhook tests
+- **Step 3b** (Review): `operator-reviewer` SUBAGENT — Reviewed modified code
+- **Step 4** (Generate): `bundling-operator` SKILL (Workflow B) — Updated CSV v0.2.0 → v0.3.0
+- **Step 5** (Validate): `operator-bundle-validator` SUBAGENT — Validated updated bundle
+
+**Changes**: Webhook handler (Default + ValidateCreate/Update/Delete), 9 webhook config files, reconcileNetworkPolicy, NetworkSecured condition, CSV v0.3.0 with replaces + webhookdefinitions.
+
+**Prerequisites**:
+- Scenario B completed successfully. All Scenario B CRs deleted.
+- **cert-manager operator** installed on OpenShift (required for webhook TLS). Install from OperatorHub: Operators → OperatorHub → search "cert-manager" → install "cert-manager Operator for Red Hat OpenShift".
+
+## Scenario C Environment Setup
+
+```bash
+export IMG=quay.io/mpaulgreen/postgres-operator:v0.3.0
+export BUNDLE_IMG=quay.io/mpaulgreen/postgres-operator-bundle:v0.3.0
+export NAMESPACE=postgres-operator-system
+
+cd e2e/postgres-operator
+```
+
+---
+
+## Phase C.1: Build and Deploy v0.3.0
+
+### C.1.1 Verify cert-manager is Running
+
+```bash
+oc get pods -n cert-manager 2>/dev/null || oc get pods -n openshift-cert-manager 2>/dev/null || echo "cert-manager not found — install it first"
+```
+
+**Expected**: cert-manager pods Running. If not installed, install via OperatorHub before proceeding.
+
+### C.1.2 Build the Operator Image
+
+```bash
+podman build --platform linux/amd64 -t $IMG .
+podman push $IMG
+```
+
+### C.1.3 Deploy the Operator
+
+#### Option A: `make deploy` (Development)
+
+```bash
+make manifests
+make deploy IMG=$IMG
+```
+
+**Note**: With webhooks enabled, `make deploy` now also creates webhook Service, Certificate, MutatingWebhookConfiguration, and ValidatingWebhookConfiguration via kustomize. cert-manager must be running to issue the TLS certificate.
+
+#### Option B: OLM
+
+```bash
+# Update CSV image reference
+sed -i '' "s|quay.io/mpaulgreen/postgres-operator:v0.3.0|$IMG|g" bundle/manifests/postgres-operator.clusterserviceversion.yaml
+
+# Refresh CRD in bundle
+make manifests
+cp config/crd/bases/database.postgres.example.com_postgresclusters.yaml bundle/manifests/
+
+# Build and push bundle
+podman build -t $BUNDLE_IMG -f bundle.Dockerfile .
+podman push $BUNDLE_IMG
+
+# Create namespace first
+oc new-project $NAMESPACE || oc create namespace $NAMESPACE
+
+# Deploy via OLM
+operator-sdk run bundle $BUNDLE_IMG --namespace $NAMESPACE --timeout 5m
+```
+
+### C.1.4 Verify Deployment
+
+```bash
+# Operator pod running
+oc get pods -n $NAMESPACE -l control-plane=controller-manager
+
+# Webhook service and certificate
+oc get service -n $NAMESPACE | grep webhook
+oc get certificate -n $NAMESPACE 2>/dev/null || oc get certificate -n $(oc get deployment -n $NAMESPACE postgres-operator-controller-manager -o jsonpath='{.metadata.namespace}') 2>/dev/null || echo "Check cert-manager namespace"
+
+# Webhook configurations registered
+oc get mutatingwebhookconfiguration | grep postgres
+oc get validatingwebhookconfiguration | grep postgres
+
+# Controller logs — should show 8 EventSources (added NetworkPolicy)
+oc logs -n $NAMESPACE -l control-plane=controller-manager --tail=20
+
+# CRD still has HA fields from Scenario B
+oc get crd postgresclusters.database.postgres.example.com -o jsonpath='{.spec.versions[0].schema.openAPIV3Schema.properties.spec.properties}' | python3 -c "import json,sys; print(sorted(json.load(sys.stdin).keys()))"
+```
+
+**Expected**:
+- [ ] Pod 1/1 Running with v0.3.0 image
+- [ ] Webhook Service exists
+- [ ] MutatingWebhookConfiguration and ValidatingWebhookConfiguration registered
+- [ ] Controller watching 8 EventSources (added NetworkPolicy)
+- [ ] CRD has all fields: backup, ha, replicas, resources, storage, version
+
+---
+
+## Phase C.2: Existing Features Regression
+
+### C.2.1 Create CR Without Webhooks Interfering
+
+```bash
+cat <<EOF | oc apply -f -
+apiVersion: database.postgres.example.com/v1alpha1
+kind: PostgresCluster
+metadata:
+  name: pg-test
+  namespace: $NAMESPACE
+spec:
+  replicas: 3
+  version: "16"
+  storage:
+    size: 1Gi
+  ha:
+    minAvailable: 2
+EOF
+
+sleep 30
+```
+
+### C.2.2 Verify All Scenario A+B Resources Created
+
+```bash
+echo "=== Managed Resources ==="
+oc get secret pg-test-credentials -n $NAMESPACE && echo "PASS: Secret" || echo "FAIL: Secret"
+oc get configmap pg-test-config -n $NAMESPACE && echo "PASS: ConfigMap" || echo "FAIL: ConfigMap"
+oc get service pg-test-headless -n $NAMESPACE && echo "PASS: Service" || echo "FAIL: Service"
+oc get statefulset pg-test -n $NAMESPACE && echo "PASS: StatefulSet" || echo "FAIL: StatefulSet"
+oc get pdb pg-test-pdb -n $NAMESPACE && echo "PASS: PDB" || echo "FAIL: PDB"
+
+echo ""
+echo "=== New: NetworkPolicy ==="
+oc get networkpolicy pg-test-network-policy -n $NAMESPACE && echo "PASS: NetworkPolicy" || echo "FAIL: NetworkPolicy"
+
+echo ""
+echo "=== Status ==="
+oc get postgrescluster pg-test -n $NAMESPACE -o wide
+```
+
+**Expected**:
+- [ ] All 5 existing resources created (Secret, ConfigMap, Service, StatefulSet, PDB)
+- [ ] NetworkPolicy `pg-test-network-policy` created (new — always created as security baseline)
+- [ ] Status shows Running
+
+---
+
+## Phase C.3: Webhook Defaulting
+
+### C.3.1 Create CR with Missing Fields (Defaulting Should Fill Them)
+
+```bash
+cat <<EOF | oc apply -f -
+apiVersion: database.postgres.example.com/v1alpha1
+kind: PostgresCluster
+metadata:
+  name: pg-defaults
+  namespace: $NAMESPACE
+spec:
+  storage:
+    size: 1Gi
+EOF
+
+sleep 5
+
+echo "=== Defaulted Fields ==="
+oc get postgrescluster pg-defaults -n $NAMESPACE -o jsonpath='{.spec.replicas}' && echo " replicas (should be 3)"
+oc get postgrescluster pg-defaults -n $NAMESPACE -o jsonpath='{.spec.version}' && echo " version (should be 16)"
+```
+
+**Expected**:
+- [ ] `replicas` defaulted to 3
+- [ ] `version` defaulted to "16"
+
+### C.3.2 Create CR with HA but No Disruption Budget Values
+
+```bash
+cat <<EOF | oc apply -f -
+apiVersion: database.postgres.example.com/v1alpha1
+kind: PostgresCluster
+metadata:
+  name: pg-ha-default
+  namespace: $NAMESPACE
+spec:
+  replicas: 3
+  version: "16"
+  storage:
+    size: 1Gi
+  ha: {}
+EOF
+
+sleep 5
+
+echo "=== HA Defaults ==="
+oc get postgrescluster pg-ha-default -n $NAMESPACE -o jsonpath='{.spec.ha.antiAffinityMode}' && echo " antiAffinityMode (should be preferred)"
+oc get postgrescluster pg-ha-default -n $NAMESPACE -o jsonpath='{.spec.ha.minAvailable}' && echo " minAvailable (should be 2 = replicas-1)"
+```
+
+**Expected**:
+- [ ] `antiAffinityMode` defaulted to "preferred"
+- [ ] `minAvailable` defaulted to 2 (replicas - 1)
+
+### C.3.3 Cleanup Defaulting Test CRs
+
+```bash
+oc delete postgrescluster pg-defaults pg-ha-default -n $NAMESPACE
+sleep 10
+```
+
+---
+
+## Phase C.4: Webhook Validation (Create)
+
+### C.4.1 Reject minAvailable >= replicas
+
+```bash
+cat <<EOF | oc apply -f - 2>&1
+apiVersion: database.postgres.example.com/v1alpha1
+kind: PostgresCluster
+metadata:
+  name: pg-bad
+  namespace: $NAMESPACE
+spec:
+  replicas: 3
+  version: "16"
+  storage:
+    size: 1Gi
+  ha:
+    minAvailable: 3
+EOF
+```
+
+**Expected**: Rejected — `ha.minAvailable (3) must be less than replicas (3)`.
+
+### C.4.2 Reject Both minAvailable and maxUnavailable Set
+
+```bash
+cat <<EOF | oc apply -f - 2>&1
+apiVersion: database.postgres.example.com/v1alpha1
+kind: PostgresCluster
+metadata:
+  name: pg-bad
+  namespace: $NAMESPACE
+spec:
+  replicas: 3
+  version: "16"
+  storage:
+    size: 1Gi
+  ha:
+    minAvailable: 2
+    maxUnavailable: 1
+EOF
+```
+
+**Expected**: Rejected — `ha.minAvailable and ha.maxUnavailable are mutually exclusive`.
+
+### C.4.3 Reject Backup Enabled Without Schedule
+
+```bash
+cat <<EOF | oc apply -f - 2>&1
+apiVersion: database.postgres.example.com/v1alpha1
+kind: PostgresCluster
+metadata:
+  name: pg-bad
+  namespace: $NAMESPACE
+spec:
+  replicas: 3
+  version: "16"
+  storage:
+    size: 1Gi
+  backup:
+    enabled: true
+EOF
+```
+
+**Expected**: Rejected — `backup.schedule is required when backup.enabled is true`.
+
+---
+
+## Phase C.5: Webhook Validation (Update)
+
+### C.5.1 Reject Storage Size Reduction
+
+```bash
+# First verify pg-test has 1Gi storage
+oc get postgrescluster pg-test -n $NAMESPACE -o jsonpath='{.spec.storage.size}' && echo " (current size)"
+
+# Try to reduce storage
+oc patch postgrescluster pg-test -n $NAMESPACE --type merge -p '{"spec":{"storage":{"size":"500Mi"}}}' 2>&1
+```
+
+**Expected**: Rejected — `storage size cannot be reduced from 1Gi to 500Mi`.
+
+### C.5.2 Allow Storage Size Increase
+
+```bash
+oc patch postgrescluster pg-test -n $NAMESPACE --type merge -p '{"spec":{"storage":{"size":"2Gi"}}}'
+```
+
+**Expected**: Accepted — storage increase is allowed.
+
+### C.5.3 Restore Original Storage Size
+
+```bash
+# Note: can't reduce back to 1Gi (webhook blocks it), so create fresh CR later if needed
+# For now leave at 2Gi
+oc get postgrescluster pg-test -n $NAMESPACE -o jsonpath='{.spec.storage.size}' && echo " (should be 2Gi)"
+```
+
+---
+
+## Phase C.6: NetworkPolicy
+
+### C.6.1 Verify NetworkPolicy Details
+
+```bash
+echo "=== NetworkPolicy ==="
+oc get networkpolicy pg-test-network-policy -n $NAMESPACE
+
+echo ""
+echo "=== Ingress Rules ==="
+oc get networkpolicy pg-test-network-policy -n $NAMESPACE -o jsonpath='{.spec.ingress}' | python3 -m json.tool
+
+echo ""
+echo "=== Egress Rules ==="
+oc get networkpolicy pg-test-network-policy -n $NAMESPACE -o jsonpath='{.spec.egress}' | python3 -m json.tool
+
+echo ""
+echo "=== Policy Types ==="
+oc get networkpolicy pg-test-network-policy -n $NAMESPACE -o jsonpath='{.spec.policyTypes}' && echo ""
+
+echo ""
+echo "=== Owner Reference ==="
+oc get networkpolicy pg-test-network-policy -n $NAMESPACE -o jsonpath='{.metadata.ownerReferences[0].kind}' && echo " (should be PostgresCluster)"
+```
+
+**Expected**:
+- [ ] Ingress allows port 5432 from pods in same namespace
+- [ ] Egress allows DNS (port 53 TCP/UDP) and intra-cluster replication (port 5432)
+- [ ] PolicyTypes includes both Ingress and Egress
+- [ ] Owner reference points to PostgresCluster
+
+### C.6.2 Verify NetworkSecured Condition
+
+```bash
+oc get postgrescluster pg-test -n $NAMESPACE -o jsonpath='{.status.conditions}' | python3 -c "
+import json, sys
+conditions = json.load(sys.stdin)
+for c in conditions:
+    if c['type'] == 'NetworkSecured':
+        print(f\"NetworkSecured: {c['status']} (reason: {c['reason']})\")
+"
+```
+
+**Expected**: `NetworkSecured: True (reason: NetworkSecured)`
+
+---
+
+## Phase C.7: Idempotency
+
+### C.7.1 Re-reconcile With Webhooks + NetworkPolicy
+
+```bash
+oc delete pod -n $NAMESPACE -l control-plane=controller-manager
+oc wait --for=condition=available deployment/postgres-operator-controller-manager -n $NAMESPACE --timeout=60s
+sleep 15
+
+echo "NetworkPolicies: $(oc get networkpolicy -n $NAMESPACE 2>&1 | grep -c pg-test) (should be 1)"
+echo "PDBs: $(oc get pdb -n $NAMESPACE 2>&1 | grep -c pg-test) (should be 1)"
+echo "Secrets: $(oc get secret -n $NAMESPACE 2>&1 | grep -c pg-test) (should be 1)"
+echo "StatefulSets: $(oc get statefulset -n $NAMESPACE 2>&1 | grep -c pg-test) (should be 1)"
+```
+
+**Expected**: Exactly 1 of each resource, no duplicates.
+
+---
+
+## Phase C.8: Delete CR
+
+### C.8.1 Delete and Verify All Resources Cleaned
+
+```bash
+oc delete postgrescluster pg-test -n $NAMESPACE
+sleep 15
+
+oc get secret pg-test-credentials -n $NAMESPACE 2>&1 | grep "not found" && echo "PASS: Secret cleaned"
+oc get configmap pg-test-config -n $NAMESPACE 2>&1 | grep "not found" && echo "PASS: ConfigMap cleaned"
+oc get service pg-test-headless -n $NAMESPACE 2>&1 | grep "not found" && echo "PASS: Service cleaned"
+oc get statefulset pg-test -n $NAMESPACE 2>&1 | grep "not found" && echo "PASS: StatefulSet cleaned"
+oc get pdb pg-test-pdb -n $NAMESPACE 2>&1 | grep "not found" && echo "PASS: PDB cleaned"
+oc get networkpolicy pg-test-network-policy -n $NAMESPACE 2>&1 | grep "not found" && echo "PASS: NetworkPolicy cleaned"
+```
+
+**Expected**:
+- [ ] All 6 managed resources garbage collected (Secret, ConfigMap, Service, StatefulSet, PDB, NetworkPolicy)
+- [ ] No orphaned resources remain
+
+---
+
+## Phase C.9: RBAC Verification
+
+### C.9.1 Verify NetworkPolicy RBAC
+
+```bash
+oc auth can-i create networkpolicies --as=system:serviceaccount:$NAMESPACE:postgres-operator-controller-manager && echo "PASS: Can create NetworkPolicies" || echo "FAIL"
+oc auth can-i delete networkpolicies --as=system:serviceaccount:$NAMESPACE:postgres-operator-controller-manager && echo "PASS: Can delete NetworkPolicies" || echo "FAIL"
+```
+
+**Expected**: Both return "yes".
+
+---
+
+## Phase C.10: OLM Bundle Validation
+
+### C.10.1 Verify Bundle Version
+
+```bash
+echo "=== CSV Version ==="
+grep 'name:.*postgres-operator.v' bundle/manifests/postgres-operator.clusterserviceversion.yaml | head -1
+grep 'replaces:' bundle/manifests/postgres-operator.clusterserviceversion.yaml
+grep '^  version:' bundle/manifests/postgres-operator.clusterserviceversion.yaml
+```
+
+**Expected**:
+- [ ] CSV name: `postgres-operator.v0.3.0`
+- [ ] replaces: `postgres-operator.v0.2.0`
+- [ ] version: `0.3.0`
+
+### C.10.2 Verify Webhook Definitions in CSV
+
+```bash
+grep -A5 'webhookdefinitions' bundle/manifests/postgres-operator.clusterserviceversion.yaml | head -10
+grep 'webhookPath' bundle/manifests/postgres-operator.clusterserviceversion.yaml
+```
+
+**Expected**:
+- [ ] `webhookdefinitions` section present
+- [ ] Mutating webhook path: `/mutate-database-postgres-example-com-v1alpha1-postgrescluster`
+- [ ] Validating webhook path: `/validate-database-postgres-example-com-v1alpha1-postgrescluster`
+
+### C.10.3 Verify NetworkPolicy RBAC in CSV
+
+```bash
+grep -A3 'networkpolicies' bundle/manifests/postgres-operator.clusterserviceversion.yaml
+```
+
+**Expected**: `networking.k8s.io/networkpolicies` with CRUD verbs.
+
+### C.10.4 Verify NetworkPolicy in Owned Resources
+
+```bash
+grep -A1 'NetworkPolicy' bundle/manifests/postgres-operator.clusterserviceversion.yaml | head -2
+```
+
+**Expected**: NetworkPolicy listed in owned resources.
+
+### C.10.5 Bundle Validate (if operator-sdk available)
+
+```bash
+operator-sdk bundle validate bundle/
+```
+
+**Expected**: No errors.
+
+---
+
+## Scenario C Cleanup
+
+```bash
+# Delete all test CRs
+oc delete postgrescluster --all -n $NAMESPACE
+sleep 15
+
+# If NOT continuing to Scenario D, undeploy the operator:
+# make undeploy                                                    # if deployed with make deploy
+# operator-sdk cleanup postgres-operator --namespace $NAMESPACE    # if deployed with OLM
+# oc delete project $NAMESPACE
+```
+
+---
+
+## Scenario C Summary Checklist
+
+| # | Test | Phase | Expected |
+|---|------|-------|----------|
+| 1 | cert-manager running | C.1 | Pods Running |
+| 2 | Operator deploys with v0.3.0 image | C.1 | Pod Running |
+| 3 | Webhook Service exists | C.1 | Service on port 443 |
+| 4 | MutatingWebhookConfiguration registered | C.1 | Exists |
+| 5 | ValidatingWebhookConfiguration registered | C.1 | Exists |
+| 6 | All A+B resources still work | C.2 | Secret, ConfigMap, Service, StatefulSet, PDB |
+| 7 | NetworkPolicy created (always, security baseline) | C.2 | pg-test-network-policy |
+| 8 | Replicas defaulted to 3 when 0 | C.3 | Webhook defaulting |
+| 9 | Version defaulted to "16" when empty | C.3 | Webhook defaulting |
+| 10 | HA antiAffinityMode defaulted to preferred | C.3 | Webhook defaulting |
+| 11 | HA minAvailable defaulted to replicas-1 | C.3 | Webhook defaulting |
+| 12 | Reject minAvailable >= replicas | C.4 | Webhook validation error |
+| 13 | Reject both minAvailable and maxUnavailable | C.4 | Webhook validation error |
+| 14 | Reject backup enabled without schedule | C.4 | Webhook validation error |
+| 15 | Reject storage size reduction on update | C.5 | Webhook validation error |
+| 16 | Allow storage size increase | C.5 | Accepted |
+| 17 | NetworkPolicy has correct ingress (port 5432) | C.6 | From same namespace |
+| 18 | NetworkPolicy has correct egress (DNS + replication) | C.6 | Port 53 + 5432 |
+| 19 | NetworkPolicy owner reference correct | C.6 | PostgresCluster |
+| 20 | NetworkSecured condition True | C.6 | NetworkSecured |
+| 21 | Idempotent — no duplicate NetworkPolicies | C.7 | Exactly 1 after re-reconcile |
+| 22 | All 6 resources cleaned on CR delete | C.8 | Including NetworkPolicy |
+| 23 | NetworkPolicy RBAC works | C.9 | can-i returns yes |
+| 24 | CSV version 0.3.0 with replaces | C.10 | Correct upgrade path |
+| 25 | Webhook definitions in CSV | C.10 | Both mutating + validating paths |
+| 26 | NetworkPolicy RBAC in CSV | C.10 | networking.k8s.io/networkpolicies |
+| 27 | NetworkPolicy in owned resources | C.10 | Listed |

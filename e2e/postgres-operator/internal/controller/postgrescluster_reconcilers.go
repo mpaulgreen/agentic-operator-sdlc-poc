@@ -25,6 +25,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	policyv1 "k8s.io/api/policy/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -187,7 +188,7 @@ func (r *PostgresClusterReconciler) reconcileStatefulSet(ctx context.Context, cr
 	existing := &appsv1.StatefulSet{}
 	err := r.Get(ctx, types.NamespacedName{Name: name, Namespace: cr.Namespace}, existing)
 	if err == nil {
-		// Check-update: reconcile replicas and affinity if changed
+		// Check-update: reconcile all mutable spec fields
 		updated := false
 		if *existing.Spec.Replicas != cr.Spec.Replicas {
 			existing.Spec.Replicas = &cr.Spec.Replicas
@@ -196,6 +197,15 @@ func (r *PostgresClusterReconciler) reconcileStatefulSet(ctx context.Context, cr
 		desiredAffinity := podAffinityForPostgresCluster(cr)
 		if !reflect.DeepEqual(existing.Spec.Template.Spec.Affinity, desiredAffinity) {
 			existing.Spec.Template.Spec.Affinity = desiredAffinity
+			updated = true
+		}
+		desiredImage := fmt.Sprintf("registry.redhat.io/rhel9/postgresql-%s", cr.Spec.Version)
+		if existing.Spec.Template.Spec.Containers[0].Image != desiredImage {
+			existing.Spec.Template.Spec.Containers[0].Image = desiredImage
+			updated = true
+		}
+		if !reflect.DeepEqual(existing.Spec.Template.Spec.Containers[0].Resources, cr.Spec.Resources) {
+			existing.Spec.Template.Spec.Containers[0].Resources = cr.Spec.Resources
 			updated = true
 		}
 		if updated {
@@ -571,4 +581,80 @@ func podAffinityForPostgresCluster(cr *databasev1alpha1.PostgresCluster) *corev1
 			},
 		},
 	}
+}
+
+func (r *PostgresClusterReconciler) reconcileNetworkPolicy(ctx context.Context, cr *databasev1alpha1.PostgresCluster) error {
+	name := fmt.Sprintf("%s-network-policy", cr.Name)
+
+	existing := &networkingv1.NetworkPolicy{}
+	err := r.Get(ctx, types.NamespacedName{Name: name, Namespace: cr.Namespace}, existing)
+	if err == nil {
+		setNetworkSecuredCondition(cr, "NetworkSecured", "NetworkPolicy is configured")
+		return nil
+	}
+	if !errors.IsNotFound(err) {
+		return err
+	}
+
+	labels := labelsForPostgresCluster(cr)
+	protocolTCP := corev1.ProtocolTCP
+	protocolUDP := corev1.ProtocolUDP
+	port5432 := intstr.FromInt32(5432)
+	port53 := intstr.FromInt32(53)
+
+	networkPolicy := &networkingv1.NetworkPolicy{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: cr.Namespace,
+			Labels:    labels,
+		},
+		Spec: networkingv1.NetworkPolicySpec{
+			PodSelector: metav1.LabelSelector{
+				MatchLabels: labels,
+			},
+			Ingress: []networkingv1.NetworkPolicyIngressRule{
+				{
+					From: []networkingv1.NetworkPolicyPeer{
+						{PodSelector: &metav1.LabelSelector{}},
+					},
+					Ports: []networkingv1.NetworkPolicyPort{
+						{Protocol: &protocolTCP, Port: &port5432},
+					},
+				},
+			},
+			Egress: []networkingv1.NetworkPolicyEgressRule{
+				{
+					Ports: []networkingv1.NetworkPolicyPort{
+						{Protocol: &protocolTCP, Port: &port53},
+						{Protocol: &protocolUDP, Port: &port53},
+					},
+				},
+				{
+					To: []networkingv1.NetworkPolicyPeer{
+						{PodSelector: &metav1.LabelSelector{MatchLabels: labels}},
+					},
+					Ports: []networkingv1.NetworkPolicyPort{
+						{Protocol: &protocolTCP, Port: &port5432},
+					},
+				},
+			},
+			PolicyTypes: []networkingv1.PolicyType{
+				networkingv1.PolicyTypeIngress,
+				networkingv1.PolicyTypeEgress,
+			},
+		},
+	}
+
+	if err := controllerutil.SetControllerReference(cr, networkPolicy, r.Scheme); err != nil {
+		return err
+	}
+
+	if err := r.Create(ctx, networkPolicy); err != nil {
+		r.Recorder.Event(cr, corev1.EventTypeWarning, "NetworkPolicyFailed", err.Error())
+		return err
+	}
+
+	r.Recorder.Event(cr, corev1.EventTypeNormal, "NetworkPolicyCreated", name)
+	setNetworkSecuredCondition(cr, "NetworkSecured", "NetworkPolicy is configured")
+	return nil
 }

@@ -159,7 +159,7 @@ Use when the user needs defaulting logic (set defaults programmatically), valida
          os.Exit(1)
      }
      ```
-   - `config/default/kustomization.yaml` — uncomment `[WEBHOOK]` and `[CERTMANAGER]` sections
+   - `config/default/kustomization.yaml` — uncomment `[WEBHOOK]` and `[CERTMANAGER]` sections, add `patches` for `manager_webhook_patch.yaml` and `webhookcainjection_patch.yaml`, and add a `replacements` section that maps: (1) webhook Service name/namespace → Certificate dnsNames, (2) Certificate name/namespace → CA injection annotations on MutatingWebhookConfiguration and ValidatingWebhookConfiguration. Without the `replacements` section, the certificate will have literal placeholder DNS names and webhook TLS will fail with x509 errors.
    - `config/crd/kustomization.yaml` — uncomment webhook patch
 
 ## Workflow D: Add API Version (Pattern G)

@@ -38,6 +38,8 @@ const (
 
 	// ConditionHAReady indicates the PodDisruptionBudget is configured for high availability.
 	ConditionHAReady = "HAReady"
+
+	ConditionNetworkSecured = "NetworkSecured"
 )
 
 // setCondition adds or updates a condition on the PostgresCluster status.
@@ -116,4 +118,12 @@ func setHAReadyCondition(cr *databasev1alpha1.PostgresCluster, reason, message s
 
 func clearHAReadyCondition(cr *databasev1alpha1.PostgresCluster, reason, message string) {
 	setCondition(cr, ConditionHAReady, metav1.ConditionFalse, reason, message)
+}
+
+func setNetworkSecuredCondition(cr *databasev1alpha1.PostgresCluster, reason, message string) {
+	setCondition(cr, ConditionNetworkSecured, metav1.ConditionTrue, reason, message)
+}
+
+func clearNetworkSecuredCondition(cr *databasev1alpha1.PostgresCluster, reason, message string) {
+	setCondition(cr, ConditionNetworkSecured, metav1.ConditionFalse, reason, message)
 }
