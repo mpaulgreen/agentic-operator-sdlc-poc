@@ -313,7 +313,7 @@ Operator projects are complex and diverse. E2E validation is organized by operat
 
 | Category | Examples | Patterns Tested | Status |
 |----------|---------|-----------------|--------|
-| **Stateful Workloads** | PostgreSQL, Redis, Kafka, MongoDB, Elasticsearch | StatefulSet, PVC, backup CronJob, connection pooling, HA (PDB/anti-affinity) | **PostgreSQL DONE** (111/111), **Redis A+B DONE** (56/56, 0 skill fixes) |
+| **Stateful Workloads** | PostgreSQL, Redis, Kafka, MongoDB, Elasticsearch | StatefulSet, PVC, backup CronJob/Job, connection pooling, HA (PDB/anti-affinity/arbiter) | **PostgreSQL DONE** (111/111), **Redis A-E DONE** (139/139, 0 fixes), **MongoDB A-B DONE** (59/59, 1 fix) |
 | **Application Platform** | RHOAI, Tekton, ArgoCD, ServiceMesh | Deployment, multi-component, cross-namespace | Planned |
 | **Infrastructure / Cloud** | Cluster autoscaler, node management | Cluster-scoped CRDs, node selectors, taints | Planned |
 | **Network / Security** | cert-manager, Kuadrant, External DNS | Webhooks, NetworkPolicy, TLS certificates, ingress | Partial (tested within PostgreSQL C) |
@@ -340,14 +340,39 @@ Progressive enhancement across 4 scenarios testing all 4 designing-operator-api 
 | C | Webhooks + NetworkPolicy | v0.3.0 | 27 | 4 skills (Workflow C) + 3 subagents |
 | D | API versioning + Connection Pooling | v0.4.0 | 28 | 4 skills (Workflow D) + 3 subagents |
 
-#### Redis Operator (Ready)
+#### Redis Operator (COMPLETE)
 
-Different stateful workload to validate skill generality. Tests 5 scenarios (A-E) covering all 4 skill workflows plus the multi-CRD expansion workflow (scaffolding Workflow B). Tests different operand patterns (2 Services, Sentinel Deployment, TLS support, RedisUser second CRD). Designed as a regression test for all 17 PostgreSQL bug fixes plus the multi-CRD gap — success criteria is zero new skill modifications.
+Different stateful workload to validate skill generality. Tests 5 scenarios (A-E) covering all 4 skill workflows plus the multi-CRD expansion workflow (scaffolding Workflow B). Tests different operand patterns (2 Services, Sentinel Deployment, TLS support, RedisUser second CRD). Designed as a regression test for all 17 PostgreSQL bug fixes plus the multi-CRD gap.
 
 - **Prompts**: [`e2e/docs/statefulsets/redis-prompts.md`](../e2e/docs/statefulsets/redis-prompts.md)
 - **Validation guide**: [`e2e/docs/statefulsets/redis-e2e-validation.md`](../e2e/docs/statefulsets/redis-e2e-validation.md)
 - **Operator code**: `e2e/redis-operator/`
-- **Results**: Scenarios A+B complete — 56/56 test conditions pass on OpenShift (both deploy paths), zero skill modifications needed. Scenarios C-E pending.
+- **Results**: 5 scenarios, 139 test conditions, zero skill modifications needed, all pass on OpenShift (both deploy paths)
+
+| Scenario | Feature | Version | Tests | Skills Exercised |
+|----------|---------|---------|-------|-----------------|
+| A | Core (from scratch) | v0.1.0 | 34 | All 5 skills (Workflow A) + 3 subagents |
+| B | Redis Sentinel HA | v0.2.0 | 22 | 4 skills (Workflow B) + 3 subagents |
+| C | Webhooks + NetworkPolicy | v0.3.0 | 24 | 4 skills (Workflow C) + 3 subagents |
+| D | API Maturity + TLS | v0.4.0 | 25 | 4 skills (Workflow D) + 3 subagents |
+| E | Add Second CRD (RedisUser) | v0.5.0 | 34 | scaffolding B + all |
+
+#### MongoDB Operator (In Progress)
+
+Gap-coverage test targeting untested skill patterns: Job (batch/v1) reconciliation and different-group multi-CRD (scaffolding Workflow C). Tests MongoDB-specific patterns (2 Secrets, YAML ConfigMap, arbiter Deployment, backup Job).
+
+- **Prompts**: [`e2e/docs/statefulsets/mongodb-prompts.md`](../e2e/docs/statefulsets/mongodb-prompts.md)
+- **Validation guide**: [`e2e/docs/statefulsets/mongodb-e2e-validation.md`](../e2e/docs/statefulsets/mongodb-e2e-validation.md)
+- **Operator code**: `e2e/mongodb-operator/`
+- **Results**: Scenarios A-B complete — 59/59 test conditions pass on OpenShift (both deploy paths), 1 skill fix (Bug #18: check-idempotency.py List() support). Scenarios C-E pending.
+
+| Scenario | Feature | Version | Tests | Skills Exercised |
+|----------|---------|---------|-------|-----------------|
+| A | Core with Job backup | v0.1.0 | 41 | All 5 skills (Workflow A) + 3 subagents |
+| B | Arbiter node | v0.2.0 | 18 | 4 skills (Workflow B) + 3 subagents |
+| C | Webhooks + NetworkPolicy | v0.3.0 | — | Pending |
+| D | API Maturity + Sharding | v0.4.0 | — | Pending |
+| E | Different-group CRD | v0.5.0 | — | Pending |
 
 #### Kafka Operator (Planned)
 

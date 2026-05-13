@@ -48,6 +48,10 @@ type MongoClusterSpec struct {
 	// Backup defines the optional backup configuration.
 	// +optional
 	Backup *BackupSpec `json:"backup,omitempty"`
+
+	// Arbiter defines the optional arbiter node configuration.
+	// +optional
+	Arbiter *ArbiterSpec `json:"arbiter,omitempty"`
 }
 
 // StorageSpec defines storage configuration for MongoDB data.
@@ -89,6 +93,17 @@ type BackupSpec struct {
 	// +kubebuilder:validation:Maximum=30
 	// +kubebuilder:default=7
 	RetentionDays int32 `json:"retentionDays,omitempty"`
+}
+
+// ArbiterSpec defines arbiter node configuration for MongoDB replica set elections.
+type ArbiterSpec struct {
+	// Enabled indicates whether the arbiter node is active.
+	// +kubebuilder:default=false
+	Enabled bool `json:"enabled,omitempty"`
+
+	// Resources defines the CPU and memory resource requirements for the arbiter.
+	// +optional
+	Resources corev1.ResourceRequirements `json:"resources,omitempty"`
 }
 
 // MongoClusterStatus defines the observed state of MongoCluster.

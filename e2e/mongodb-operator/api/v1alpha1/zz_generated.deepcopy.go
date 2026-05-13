@@ -31,6 +31,15 @@ func (in *AuthSpec) DeepCopy() *AuthSpec {
 	out := new(AuthSpec); in.DeepCopyInto(out); return out
 }
 
+func (in *ArbiterSpec) DeepCopyInto(out *ArbiterSpec) {
+	*out = *in
+	in.Resources.DeepCopyInto(&out.Resources)
+}
+func (in *ArbiterSpec) DeepCopy() *ArbiterSpec {
+	if in == nil { return nil }
+	out := new(ArbiterSpec); in.DeepCopyInto(out); return out
+}
+
 func (in *BackupSpec) DeepCopyInto(out *BackupSpec) { *out = *in }
 func (in *BackupSpec) DeepCopy() *BackupSpec {
 	if in == nil { return nil }
@@ -98,6 +107,11 @@ func (in *MongoClusterSpec) DeepCopyInto(out *MongoClusterSpec) {
 		in, out := &in.Backup, &out.Backup
 		*out = new(BackupSpec)
 		**out = **in
+	}
+	if in.Arbiter != nil {
+		in, out := &in.Arbiter, &out.Arbiter
+		*out = new(ArbiterSpec)
+		(*in).DeepCopyInto(*out)
 	}
 }
 func (in *MongoClusterSpec) DeepCopy() *MongoClusterSpec {

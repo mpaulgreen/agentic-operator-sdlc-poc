@@ -26,7 +26,8 @@ const (
 	ConditionAvailable   = "Available"
 	ConditionProgressing = "Progressing"
 	ConditionDegraded    = "Degraded"
-	ConditionBackupReady = "BackupReady"
+	ConditionBackupReady  = "BackupReady"
+	ConditionArbiterReady = "ArbiterReady"
 )
 
 func setCondition(cr *databasev1alpha1.MongoCluster, conditionType string, status metav1.ConditionStatus, reason, message string) {
@@ -85,4 +86,12 @@ func setBackupReadyCondition(cr *databasev1alpha1.MongoCluster, reason, message 
 
 func clearBackupReadyCondition(cr *databasev1alpha1.MongoCluster, reason, message string) {
 	setCondition(cr, ConditionBackupReady, metav1.ConditionFalse, reason, message)
+}
+
+func setArbiterReadyCondition(cr *databasev1alpha1.MongoCluster, reason, message string) {
+	setCondition(cr, ConditionArbiterReady, metav1.ConditionTrue, reason, message)
+}
+
+func clearArbiterReadyCondition(cr *databasev1alpha1.MongoCluster, reason, message string) {
+	setCondition(cr, ConditionArbiterReady, metav1.ConditionFalse, reason, message)
 }

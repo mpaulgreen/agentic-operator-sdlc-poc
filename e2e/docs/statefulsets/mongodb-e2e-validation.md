@@ -753,3 +753,370 @@ sleep 15
 | 39 | Bundle validates | 11 | No errors |
 | 40 | Multiple instances independent | 12.1 | No cross-contamination |
 | 41 | Deleting one doesn't affect others | 12.2 | Others still Running |
+
+---
+---
+
+# Scenario B: Arbiter Node (v0.2.0)
+
+Adds a MongoDB arbiter node — a vote-only Deployment with no data storage for replica set elections. Built using:
+- **Step 1** (Generate): `designing-operator-api` SKILL (Workflow B) — Added ArbiterSpec to types
+- **Step 2** (Generate): `implementing-reconciliation` SKILL (Workflow B) — Added reconcileArbiter (conditional Deployment)
+- **Step 3a** (Test): `operator-test-generator` SUBAGENT (Workflow B) — Added arbiter tests (4 cases)
+- **Step 3b** (Review): `operator-reviewer` SUBAGENT — Reviewed modified code (0 Critical)
+- **Step 4** (Generate): `bundling-operator` SKILL (Workflow B) — Updated CSV v0.1.0 → v0.2.0
+- **Step 5** (Validate): `operator-bundle-validator` SUBAGENT — Validated updated bundle
+
+**Changes**: ArbiterSpec (enabled, resources), reconcileArbiter creating conditional Deployment (1 replica, no PVC, port 27017), ArbiterReady condition, Deployment RBAC, check-update for resources, CSV v0.2.0 with replaces.
+
+**Key difference from Redis Sentinel**: Arbiter is always 1 replica (vote-only), has no PVC (no data), and no associated Service (no client access).
+
+**Prerequisites**: Scenario A completed successfully. All Scenario A CRs deleted.
+
+## Scenario B Environment Setup
+
+```bash
+export IMG=quay.io/mpaulgreen/mongodb-operator:v0.2.0
+export BUNDLE_IMG=quay.io/mpaulgreen/mongodb-operator-bundle:v0.2.0
+export NAMESPACE=mongodb-operator-system
+
+cd e2e/mongodb-operator
+```
+
+---
+
+## Phase B.1: Build and Deploy v0.2.0
+
+### B.1.1 Build the Operator Image
+
+```bash
+podman build --platform linux/amd64 -t $IMG .
+podman push $IMG
+```
+
+### B.1.2 Deploy the Operator
+
+#### Option A: `make deploy` (Development)
+
+```bash
+make manifests
+make deploy IMG=$IMG
+```
+
+#### Option B: OLM
+
+```bash
+# Update CSV image reference
+sed -i '' "s|quay.io/mpaulgreen/mongodb-operator:v0.2.0|$IMG|g" bundle/manifests/mongodb-operator.clusterserviceversion.yaml
+
+# Refresh CRD in bundle
+make manifests
+cp config/crd/bases/database.mongodb.example.com_mongoclusters.yaml bundle/manifests/
+
+# Build and push bundle
+podman build -t $BUNDLE_IMG -f bundle.Dockerfile .
+podman push $BUNDLE_IMG
+
+# Create namespace first
+oc new-project $NAMESPACE || oc create namespace $NAMESPACE
+
+# Deploy via OLM
+operator-sdk run bundle $BUNDLE_IMG --namespace $NAMESPACE --timeout 5m
+```
+
+### B.1.3 Verify Deployment
+
+```bash
+oc get pods -n $NAMESPACE -l control-plane=controller-manager
+oc logs -n $NAMESPACE -l control-plane=controller-manager --tail=20
+
+# CRD has arbiter field
+oc get crd mongoclusters.database.mongodb.example.com -o jsonpath='{.spec.versions[0].schema.openAPIV3Schema.properties.spec.properties}' | python3 -c "import json,sys; print(sorted(json.load(sys.stdin).keys()))"
+
+# Controller watching 7 EventSources (added Deployment)
+oc logs -n $NAMESPACE -l control-plane=controller-manager --tail=20 | grep -E "Starting EventSource|Starting workers"
+```
+
+**Expected**:
+- [ ] Pod 1/1 Running with v0.2.0 image
+- [ ] CRD fields: arbiter, auth, backup, replicas, resources, storage, version
+- [ ] Controller watching 7 EventSources (added Deployment)
+
+---
+
+## Phase B.2: Existing Features Regression
+
+### B.2.1 Create CR Without Arbiter
+
+```bash
+cat <<EOF | oc apply -f -
+apiVersion: database.mongodb.example.com/v1alpha1
+kind: MongoCluster
+metadata:
+  name: mongo-test
+  namespace: $NAMESPACE
+spec:
+  replicas: 3
+  version: "7.0"
+  storage:
+    size: 1Gi
+EOF
+
+sleep 30
+```
+
+### B.2.2 Verify All Scenario A Resources Created
+
+```bash
+echo "=== Managed Resources ==="
+oc get secret mongo-test-admin -n $NAMESPACE && echo "PASS: Admin Secret" || echo "FAIL"
+oc get secret mongo-test-keyfile -n $NAMESPACE && echo "PASS: KeyFile Secret" || echo "FAIL"
+oc get configmap mongo-test-config -n $NAMESPACE && echo "PASS: ConfigMap" || echo "FAIL"
+oc get service mongo-test-headless -n $NAMESPACE && echo "PASS: Headless Service" || echo "FAIL"
+oc get service mongo-test-client -n $NAMESPACE && echo "PASS: Client Service" || echo "FAIL"
+oc get statefulset mongo-test -n $NAMESPACE && echo "PASS: StatefulSet" || echo "FAIL"
+
+echo ""
+echo "=== No Arbiter (not configured) ==="
+oc get deployment mongo-test-arbiter -n $NAMESPACE 2>&1 | grep "not found" && echo "PASS: No Arbiter Deployment" || echo "FAIL"
+
+echo ""
+echo "=== Status ==="
+oc get mongocluster mongo-test -n $NAMESPACE -o wide
+```
+
+**Expected**:
+- [ ] All 6 existing resources created (Secret×2, ConfigMap, Service×2, StatefulSet)
+- [ ] No Arbiter Deployment (arbiter not configured)
+- [ ] Status shows Running
+
+---
+
+## Phase B.3: Enable Arbiter
+
+### B.3.1 Enable Arbiter
+
+```bash
+oc patch mongocluster mongo-test -n $NAMESPACE --type merge -p '{"spec":{"arbiter":{"enabled":true}}}'
+sleep 15
+```
+
+### B.3.2 Verify Arbiter Deployment Created
+
+```bash
+echo "=== Arbiter Deployment ==="
+oc get deployment mongo-test-arbiter -n $NAMESPACE
+oc get deployment mongo-test-arbiter -n $NAMESPACE -o jsonpath='{.spec.replicas}' && echo " replicas (should be 1)"
+oc get deployment mongo-test-arbiter -n $NAMESPACE -o jsonpath='{.spec.template.spec.containers[0].ports[0].containerPort}' && echo " port (should be 27017)"
+
+echo ""
+echo "=== Arbiter Deployment Owner Reference ==="
+oc get deployment mongo-test-arbiter -n $NAMESPACE -o jsonpath='{.metadata.ownerReferences[0].kind}' && echo " (should be MongoCluster)"
+
+echo ""
+echo "=== Arbiter Deployment Labels ==="
+oc get deployment mongo-test-arbiter -n $NAMESPACE -o jsonpath='{.metadata.labels}' | python3 -m json.tool
+```
+
+**Expected**:
+- [ ] Deployment `mongo-test-arbiter` created with 1 replica (always 1)
+- [ ] Port 27017
+- [ ] Owner reference → MongoCluster
+- [ ] Labels include `component: arbiter`
+
+### B.3.3 Verify No PVC on Arbiter (Vote-Only)
+
+```bash
+oc get deployment mongo-test-arbiter -n $NAMESPACE -o jsonpath='{.spec.template.spec.volumes}' 2>/dev/null && echo " volumes" || echo "No volumes (correct — arbiter has no data)"
+```
+
+**Expected**:
+- [ ] No volumes/PVC on arbiter Deployment (vote-only, no data storage)
+
+### B.3.4 Verify ArbiterReady Condition
+
+```bash
+oc get mongocluster mongo-test -n $NAMESPACE -o jsonpath='{.status.conditions}' | python3 -c "
+import json, sys
+conditions = json.load(sys.stdin)
+for c in conditions:
+    if c['type'] == 'ArbiterReady':
+        print(f\"ArbiterReady: {c['status']} (reason: {c['reason']})\")
+"
+```
+
+**Expected**:
+- [ ] ArbiterReady: True (ArbiterConfigured)
+
+### B.3.5 Verify Existing Resources Unaffected
+
+```bash
+oc get statefulset mongo-test -n $NAMESPACE && echo "PASS: StatefulSet still exists"
+oc get mongocluster mongo-test -n $NAMESPACE -o jsonpath='{.status.phase}' && echo " (should still be Running)"
+```
+
+---
+
+## Phase B.4: Disable Arbiter
+
+### B.4.1 Disable Arbiter
+
+```bash
+oc patch mongocluster mongo-test -n $NAMESPACE --type merge -p '{"spec":{"arbiter":{"enabled":false}}}'
+sleep 15
+
+echo "=== Arbiter After Disable ==="
+oc get deployment mongo-test-arbiter -n $NAMESPACE 2>&1 | grep "not found" && echo "PASS: Deployment deleted" || echo "FAIL: Deployment still exists"
+
+echo ""
+echo "=== ArbiterReady After Disable ==="
+oc get mongocluster mongo-test -n $NAMESPACE -o jsonpath='{.status.conditions}' | python3 -c "
+import json, sys
+conditions = json.load(sys.stdin)
+for c in conditions:
+    if c['type'] == 'ArbiterReady':
+        print(f\"ArbiterReady: {c['status']} (reason: {c['reason']})\")
+"
+```
+
+**Expected**:
+- [ ] Arbiter Deployment deleted
+- [ ] ArbiterReady: False (ArbiterDisabled)
+
+---
+
+## Phase B.5: Idempotency
+
+### B.5.1 Re-enable Arbiter and Re-reconcile
+
+```bash
+# Re-enable arbiter
+oc patch mongocluster mongo-test -n $NAMESPACE --type merge -p '{"spec":{"arbiter":{"enabled":true}}}'
+sleep 15
+
+# Restart controller
+oc delete pod -n $NAMESPACE -l control-plane=controller-manager
+oc wait --for=condition=available deployment -l control-plane=controller-manager -n $NAMESPACE --timeout=60s
+sleep 15
+
+echo "Arbiter Deployments: $(oc get deployment -n $NAMESPACE 2>&1 | grep -c mongo-test-arbiter) (should be 1)"
+echo "StatefulSets: $(oc get statefulset -n $NAMESPACE 2>&1 | grep -c mongo-test) (should be 1)"
+```
+
+**Expected**: Exactly 1 of each, no duplicates.
+
+---
+
+## Phase B.6: Delete CR with Arbiter
+
+### B.6.1 Delete and Verify All Resources Cleaned
+
+```bash
+oc delete mongocluster mongo-test -n $NAMESPACE
+sleep 15
+
+oc get secret mongo-test-admin -n $NAMESPACE 2>&1 | grep "not found" && echo "PASS: Admin Secret cleaned"
+oc get secret mongo-test-keyfile -n $NAMESPACE 2>&1 | grep "not found" && echo "PASS: KeyFile Secret cleaned"
+oc get configmap mongo-test-config -n $NAMESPACE 2>&1 | grep "not found" && echo "PASS: ConfigMap cleaned"
+oc get service mongo-test-headless -n $NAMESPACE 2>&1 | grep "not found" && echo "PASS: Headless Service cleaned"
+oc get service mongo-test-client -n $NAMESPACE 2>&1 | grep "not found" && echo "PASS: Client Service cleaned"
+oc get statefulset mongo-test -n $NAMESPACE 2>&1 | grep "not found" && echo "PASS: StatefulSet cleaned"
+oc get deployment mongo-test-arbiter -n $NAMESPACE 2>&1 | grep "not found" && echo "PASS: Arbiter Deployment cleaned"
+```
+
+**Expected**:
+- [ ] All 7 managed resources garbage collected (including Arbiter Deployment)
+
+---
+
+## Phase B.7: RBAC Verification
+
+### B.7.1 Verify Deployment RBAC
+
+```bash
+oc auth can-i create deployments --as=system:serviceaccount:$NAMESPACE:mongodb-operator-controller-manager -n $NAMESPACE && echo "PASS: Can create Deployments" || echo "FAIL"
+oc auth can-i delete deployments --as=system:serviceaccount:$NAMESPACE:mongodb-operator-controller-manager -n $NAMESPACE && echo "PASS: Can delete Deployments" || echo "FAIL"
+```
+
+**Expected**: Both return "yes".
+
+---
+
+## Phase B.8: OLM Bundle Validation
+
+### B.8.1 Verify Bundle Version
+
+```bash
+echo "=== CSV Version ==="
+grep 'name:.*mongodb-operator.v' bundle/manifests/mongodb-operator.clusterserviceversion.yaml | head -1
+grep 'replaces:' bundle/manifests/mongodb-operator.clusterserviceversion.yaml
+grep '^  version:' bundle/manifests/mongodb-operator.clusterserviceversion.yaml
+```
+
+**Expected**:
+- [ ] CSV name: `mongodb-operator.v0.2.0`
+- [ ] replaces: `mongodb-operator.v0.1.0`
+- [ ] version: `0.2.0`
+
+### B.8.2 Verify Arbiter Descriptors
+
+```bash
+grep -E 'arbiter' bundle/manifests/mongodb-operator.clusterserviceversion.yaml | grep 'path:' | head -5
+```
+
+**Expected**: specDescriptors for arbiter, arbiter.enabled.
+
+### B.8.3 Verify Deployment RBAC in CSV
+
+```bash
+grep -A3 'deployments' bundle/manifests/mongodb-operator.clusterserviceversion.yaml | head -5
+```
+
+**Expected**: `apps/deployments` with CRUD verbs.
+
+### B.8.4 Bundle Validate
+
+```bash
+operator-sdk bundle validate bundle/
+```
+
+**Expected**: No errors.
+
+---
+
+## Scenario B Cleanup
+
+```bash
+oc delete mongocluster --all -n $NAMESPACE
+sleep 15
+
+# If NOT continuing to Scenario C, undeploy:
+# make undeploy                                                    # if deployed with make deploy
+# operator-sdk cleanup mongodb-operator --namespace $NAMESPACE     # if deployed with OLM
+# oc delete project $NAMESPACE
+```
+
+---
+
+## Scenario B Summary Checklist
+
+| # | Test | Phase | Expected |
+|---|------|-------|----------|
+| 1 | Operator deploys with v0.2.0 image | B.1 | Pod Running, CRD has arbiter field |
+| 2 | All Scenario A resources work without arbiter | B.2 | 6 resources created |
+| 3 | No arbiter Deployment when not configured | B.2 | Not found |
+| 4 | Arbiter Deployment created when enabled | B.3 | 1 replica, port 27017 |
+| 5 | Arbiter Deployment has correct owner ref | B.3 | MongoCluster |
+| 6 | Arbiter Deployment has component=arbiter label | B.3 | Labels correct |
+| 7 | No PVC on arbiter (vote-only) | B.3 | No volumes |
+| 8 | ArbiterReady condition True | B.3 | ArbiterConfigured |
+| 9 | Existing resources unaffected | B.3 | StatefulSet ok |
+| 10 | Arbiter Deployment deleted when disabled | B.4 | Not found |
+| 11 | ArbiterReady False when disabled | B.4 | ArbiterDisabled |
+| 12 | Idempotent — no duplicate arbiter resources | B.5 | Exactly 1 each |
+| 13 | All 7 resources cleaned on CR delete | B.6 | Including arbiter |
+| 14 | Deployment RBAC works | B.7 | can-i returns yes |
+| 15 | CSV version 0.2.0 with replaces | B.8 | Correct upgrade path |
+| 16 | Arbiter descriptors in CSV | B.8 | arbiter.* fields present |
+| 17 | Deployment RBAC in CSV | B.8 | apps/deployments |
+| 18 | Bundle validates | B.8 | No errors |

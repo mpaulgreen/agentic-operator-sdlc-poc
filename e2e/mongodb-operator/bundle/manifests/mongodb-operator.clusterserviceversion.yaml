@@ -30,11 +30,11 @@ metadata:
     capabilities: Basic Install
     categories: Database
     certified: "false"
-    createdAt: "2026-05-12T00:00:00Z"
+    createdAt: "2026-05-13T00:00:00Z"
     operators.operatorframework.io/builder: operator-sdk-v1.37.0
     operators.operatorframework.io/project_layout: go.kubebuilder.io/v4
     repository: https://github.com/example/mongodb-operator
-  name: mongodb-operator.v0.1.0
+  name: mongodb-operator.v0.2.0
   namespace: placeholder
 spec:
   apiservicedefinitions: {}
@@ -55,6 +55,8 @@ spec:
       - kind: ConfigMap
         version: v1
       - kind: Job
+        version: v1
+      - kind: Deployment
         version: v1
       specDescriptors:
       - path: replicas
@@ -81,6 +83,12 @@ spec:
       - path: backup.retentionDays
         displayName: Retention Days
         description: Number of days to retain backups
+      - path: arbiter
+        displayName: Arbiter
+        description: Optional arbiter node configuration
+      - path: arbiter.enabled
+        displayName: Arbiter Enabled
+        description: Whether the arbiter node is active
       statusDescriptors:
       - path: phase
         displayName: Phase
@@ -105,7 +113,12 @@ spec:
     The MongoDB Operator manages MongoCluster resources on OpenShift.
     It automates deployment, scaling, and lifecycle management of
     MongoDB replica sets using StatefulSets, Services, Secrets,
-    ConfigMaps, and backup Jobs.
+    ConfigMaps, backup Jobs, and Arbiter Deployments.
+
+    ## v0.2.0 — Arbiter Node
+    - Added Arbiter support for replica set elections
+    - Arbiter is a vote-only member (no data storage)
+    - Conditional Deployment: created when enabled, deleted when disabled
   displayName: MongoDB Operator
   icon:
   - base64data: ""
@@ -186,6 +199,18 @@ spec:
         - apiGroups:
           - apps
           resources:
+          - deployments
+          verbs:
+          - create
+          - delete
+          - get
+          - list
+          - patch
+          - update
+          - watch
+        - apiGroups:
+          - apps
+          resources:
           - statefulsets
           verbs:
           - create
@@ -235,7 +260,7 @@ spec:
                 - --leader-elect
                 command:
                 - /manager
-                image: quay.io/mpaulgreen/mongodb-operator:v0.1.0
+                image: quay.io/mpaulgreen/mongodb-operator:v0.2.0
                 livenessProbe:
                   httpGet:
                     path: /healthz
@@ -327,4 +352,5 @@ spec:
   provider:
     name: Example
     url: https://example.com
-  version: 0.1.0
+  replaces: mongodb-operator.v0.1.0
+  version: 0.2.0

@@ -809,6 +809,151 @@ var _ = Describe("MongoCluster Controller", func() {
 	})
 
 	// ============================================================
+	// Per-Method Tests: reconcileArbiter
+	// ============================================================
+	Context("When reconciling Arbiter", func() {
+		var (
+			ctx        context.Context
+			name       string
+			namespace  string
+			key        types.NamespacedName
+			cr         *databasev1alpha1.MongoCluster
+			reconciler *MongoClusterReconciler
+		)
+
+		BeforeEach(func() {
+			ctx = context.Background()
+			name = fmt.Sprintf("test-%d", time.Now().UnixNano())
+			namespace = "default"
+			key = types.NamespacedName{Name: name, Namespace: namespace}
+
+			cr = &databasev1alpha1.MongoCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      name,
+					Namespace: namespace,
+				},
+				Spec: databasev1alpha1.MongoClusterSpec{
+					Replicas: 3,
+					Version:  "7.0",
+					Storage: databasev1alpha1.StorageSpec{
+						Size: "10Gi",
+					},
+				},
+			}
+
+			reconciler = &MongoClusterReconciler{
+				Client:   k8sClient,
+				Scheme:   k8sClient.Scheme(),
+				Recorder: record.NewFakeRecorder(100),
+			}
+
+			Expect(k8sClient.Create(ctx, cr)).To(Succeed())
+			Expect(k8sClient.Get(ctx, key, cr)).To(Succeed())
+		})
+
+		AfterEach(func() {
+			resource := &databasev1alpha1.MongoCluster{}
+			if err := k8sClient.Get(ctx, key, resource); err == nil {
+				resource.Finalizers = nil
+				_ = k8sClient.Update(ctx, resource)
+				Expect(k8sClient.Delete(ctx, resource)).To(Succeed())
+			}
+		})
+
+		It("should create arbiter Deployment when enabled", func() {
+			cr.Spec.Arbiter = &databasev1alpha1.ArbiterSpec{
+				Enabled: true,
+			}
+			Expect(k8sClient.Update(ctx, cr)).To(Succeed())
+
+			Expect(reconciler.reconcileArbiter(ctx, cr)).To(Succeed())
+
+			deployment := &appsv1.Deployment{}
+			depKey := types.NamespacedName{Name: fmt.Sprintf("%s-arbiter", name), Namespace: namespace}
+			Expect(k8sClient.Get(ctx, depKey, deployment)).To(Succeed())
+
+			// Verify replicas is 1
+			Expect(*deployment.Spec.Replicas).To(Equal(int32(1)))
+
+			// Verify arbiter component label
+			Expect(deployment.Labels).To(HaveKeyWithValue("app.kubernetes.io/component", "arbiter"))
+			Expect(deployment.Labels).To(HaveKeyWithValue("app.kubernetes.io/instance", name))
+			Expect(deployment.Labels).To(HaveKeyWithValue("app.kubernetes.io/managed-by", "mongodb-operator"))
+
+			// Verify container
+			Expect(deployment.Spec.Template.Spec.Containers).To(HaveLen(1))
+			Expect(deployment.Spec.Template.Spec.Containers[0].Name).To(Equal("arbiter"))
+			Expect(deployment.Spec.Template.Spec.Containers[0].Image).To(ContainSubstring("mongodb"))
+
+			// Verify container port
+			Expect(deployment.Spec.Template.Spec.Containers[0].Ports).To(HaveLen(1))
+			Expect(deployment.Spec.Template.Spec.Containers[0].Ports[0].ContainerPort).To(Equal(int32(27017)))
+
+			// Verify owner reference
+			Expect(deployment.OwnerReferences).To(HaveLen(1))
+			Expect(deployment.OwnerReferences[0].Name).To(Equal(name))
+		})
+
+		It("should not create arbiter when disabled", func() {
+			// Default: no arbiter spec (nil)
+			Expect(reconciler.reconcileArbiter(ctx, cr)).To(Succeed())
+
+			deployment := &appsv1.Deployment{}
+			depKey := types.NamespacedName{Name: fmt.Sprintf("%s-arbiter", name), Namespace: namespace}
+			err := k8sClient.Get(ctx, depKey, deployment)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("not found"))
+		})
+
+		It("should be idempotent for arbiter", func() {
+			cr.Spec.Arbiter = &databasev1alpha1.ArbiterSpec{
+				Enabled: true,
+			}
+			Expect(k8sClient.Update(ctx, cr)).To(Succeed())
+
+			// First reconcile creates the Deployment
+			Expect(reconciler.reconcileArbiter(ctx, cr)).To(Succeed())
+
+			deployment := &appsv1.Deployment{}
+			depKey := types.NamespacedName{Name: fmt.Sprintf("%s-arbiter", name), Namespace: namespace}
+			Expect(k8sClient.Get(ctx, depKey, deployment)).To(Succeed())
+			originalVersion := deployment.ResourceVersion
+
+			// Second reconcile should not recreate
+			Expect(reconciler.reconcileArbiter(ctx, cr)).To(Succeed())
+			Expect(k8sClient.Get(ctx, depKey, deployment)).To(Succeed())
+			Expect(deployment.ResourceVersion).To(Equal(originalVersion))
+		})
+
+		It("should delete arbiter when disabled", func() {
+			// First enable arbiter and reconcile to create Deployment
+			cr.Spec.Arbiter = &databasev1alpha1.ArbiterSpec{
+				Enabled: true,
+			}
+			Expect(k8sClient.Update(ctx, cr)).To(Succeed())
+
+			Expect(reconciler.reconcileArbiter(ctx, cr)).To(Succeed())
+
+			// Verify Deployment exists
+			deployment := &appsv1.Deployment{}
+			depKey := types.NamespacedName{Name: fmt.Sprintf("%s-arbiter", name), Namespace: namespace}
+			Expect(k8sClient.Get(ctx, depKey, deployment)).To(Succeed())
+
+			// Now disable arbiter
+			cr.Spec.Arbiter.Enabled = false
+			Expect(k8sClient.Update(ctx, cr)).To(Succeed())
+
+			// Reconcile should delete the Deployment
+			Expect(reconciler.reconcileArbiter(ctx, cr)).To(Succeed())
+
+			// Verify Deployment is deleted
+			err := k8sClient.Get(ctx, depKey, deployment)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("not found"))
+		})
+	})
+
+	// ============================================================
 	// Helper Function Tests
 	// ============================================================
 	Context("When testing helper functions", func() {

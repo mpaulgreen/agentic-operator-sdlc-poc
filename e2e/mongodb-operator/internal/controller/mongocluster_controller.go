@@ -54,6 +54,7 @@ type MongoClusterReconciler struct {
 //+kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=apps,resources=statefulsets,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=batch,resources=jobs,verbs=get;list;watch;create;update;patch;delete
 
 func (r *MongoClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -112,6 +113,10 @@ func (r *MongoClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		return r.handleError(ctx, cr, "StatefulSetReconcileFailed", err)
 	}
 
+	if err := r.reconcileArbiter(ctx, cr); err != nil {
+		return r.handleError(ctx, cr, "ArbiterReconcileFailed", err)
+	}
+
 	if err := r.reconcileBackupJob(ctx, cr); err != nil {
 		return r.handleError(ctx, cr, "BackupJobReconcileFailed", err)
 	}
@@ -167,6 +172,7 @@ func (r *MongoClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Owns(&corev1.ConfigMap{}).
 		Owns(&corev1.Service{}).
 		Owns(&appsv1.StatefulSet{}).
+		Owns(&appsv1.Deployment{}).
 		Owns(&batchv1.Job{}).
 		Complete(r)
 }

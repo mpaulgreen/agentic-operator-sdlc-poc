@@ -415,6 +415,109 @@ func (r *MongoClusterReconciler) reconcileStatefulSet(ctx context.Context, cr *d
 	return nil
 }
 
+func (r *MongoClusterReconciler) reconcileArbiter(ctx context.Context, cr *databasev1alpha1.MongoCluster) error {
+	name := fmt.Sprintf("%s-arbiter", cr.Name)
+
+	if cr.Spec.Arbiter == nil || !cr.Spec.Arbiter.Enabled {
+		existing := &appsv1.Deployment{}
+		err := r.Get(ctx, types.NamespacedName{Name: name, Namespace: cr.Namespace}, existing)
+		if err == nil {
+			if err := r.Delete(ctx, existing); err != nil {
+				return err
+			}
+			r.Recorder.Event(cr, corev1.EventTypeNormal, "ArbiterDeleted",
+				fmt.Sprintf("Deleted arbiter Deployment %s", name))
+		} else if !errors.IsNotFound(err) {
+			return err
+		}
+		clearArbiterReadyCondition(cr, "ArbiterDisabled", "Arbiter is not enabled")
+		return nil
+	}
+
+	existing := &appsv1.Deployment{}
+	err := r.Get(ctx, types.NamespacedName{Name: name, Namespace: cr.Namespace}, existing)
+	if err == nil {
+		updated := false
+		if !reflect.DeepEqual(existing.Spec.Template.Spec.Containers[0].Resources, cr.Spec.Arbiter.Resources) {
+			existing.Spec.Template.Spec.Containers[0].Resources = cr.Spec.Arbiter.Resources
+			updated = true
+		}
+		if updated {
+			if err := r.Update(ctx, existing); err != nil {
+				r.Recorder.Event(cr, corev1.EventTypeWarning, "ArbiterUpdateFailed",
+					fmt.Sprintf("Failed to update arbiter Deployment: %v", err))
+				return err
+			}
+			r.Recorder.Event(cr, corev1.EventTypeNormal, "ArbiterUpdated",
+				fmt.Sprintf("Updated arbiter Deployment %s", name))
+		}
+		return nil
+	}
+	if !errors.IsNotFound(err) {
+		return err
+	}
+
+	replicas := int32(1)
+	arbiterLabels := map[string]string{
+		"app.kubernetes.io/name":       "mongodb",
+		"app.kubernetes.io/instance":   cr.Name,
+		"app.kubernetes.io/managed-by": "mongodb-operator",
+		"app.kubernetes.io/part-of":    cr.Name,
+		"app.kubernetes.io/component":  "arbiter",
+	}
+
+	deployment := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: cr.Namespace,
+			Labels:    arbiterLabels,
+		},
+		Spec: appsv1.DeploymentSpec{
+			Replicas: &replicas,
+			Selector: &metav1.LabelSelector{
+				MatchLabels: arbiterLabels,
+			},
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: arbiterLabels,
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name:    "arbiter",
+							Image:   imageForMongoCluster(cr),
+							Command: []string{"/bin/sleep", "infinity"},
+							Ports: []corev1.ContainerPort{
+								{
+									Name:          "mongodb",
+									ContainerPort: 27017,
+									Protocol:      corev1.ProtocolTCP,
+								},
+							},
+							Resources: cr.Spec.Arbiter.Resources,
+						},
+					},
+				},
+			},
+		},
+	}
+
+	if err := controllerutil.SetControllerReference(cr, deployment, r.Scheme); err != nil {
+		return err
+	}
+
+	if err := r.Create(ctx, deployment); err != nil {
+		r.Recorder.Event(cr, corev1.EventTypeWarning, "ArbiterFailed",
+			fmt.Sprintf("Failed to create arbiter Deployment: %v", err))
+		return err
+	}
+
+	r.Recorder.Event(cr, corev1.EventTypeNormal, "ArbiterCreated",
+		fmt.Sprintf("Created arbiter Deployment %s", name))
+	setArbiterReadyCondition(cr, "ArbiterConfigured", "Arbiter Deployment is running")
+	return nil
+}
+
 func (r *MongoClusterReconciler) reconcileBackupJob(ctx context.Context, cr *databasev1alpha1.MongoCluster) error {
 	if cr.Spec.Backup == nil || !cr.Spec.Backup.Enabled {
 		clearBackupReadyCondition(cr, "BackupDisabled", "Backup is not enabled")
