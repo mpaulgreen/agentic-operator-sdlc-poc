@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package v1alpha1
+package v1beta1
 
 import (
 	"fmt"
@@ -27,7 +27,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 )
 
-var elasticsearchclusterlog = logf.Log.WithName("elasticsearchcluster-resource")
+var elasticsearchclusterlog = logf.Log.WithName("elasticsearchcluster-v1beta1-resource")
 
 func (r *ElasticsearchCluster) SetupWebhookWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewWebhookManagedBy(mgr).
@@ -35,7 +35,7 @@ func (r *ElasticsearchCluster) SetupWebhookWithManager(mgr ctrl.Manager) error {
 		Complete()
 }
 
-//+kubebuilder:webhook:path=/mutate-search-elasticsearch-example-com-v1alpha1-elasticsearchcluster,mutating=true,failurePolicy=fail,sideEffects=None,groups=search.elasticsearch.example.com,resources=elasticsearchclusters,verbs=create;update,versions=v1alpha1,name=melasticsearchcluster.kb.io,admissionReviewVersions=v1
+//+kubebuilder:webhook:path=/mutate-search-elasticsearch-example-com-v1beta1-elasticsearchcluster,mutating=true,failurePolicy=fail,sideEffects=None,groups=search.elasticsearch.example.com,resources=elasticsearchclusters,verbs=create;update,versions=v1beta1,name=melasticsearchclusterv1beta1.kb.io,admissionReviewVersions=v1
 
 var _ webhook.Defaulter = &ElasticsearchCluster{}
 
@@ -56,7 +56,7 @@ func (r *ElasticsearchCluster) Default() {
 	}
 }
 
-//+kubebuilder:webhook:path=/validate-search-elasticsearch-example-com-v1alpha1-elasticsearchcluster,mutating=false,failurePolicy=fail,sideEffects=None,groups=search.elasticsearch.example.com,resources=elasticsearchclusters,verbs=create;update,versions=v1alpha1,name=velasticsearchcluster.kb.io,admissionReviewVersions=v1
+//+kubebuilder:webhook:path=/validate-search-elasticsearch-example-com-v1beta1-elasticsearchcluster,mutating=false,failurePolicy=fail,sideEffects=None,groups=search.elasticsearch.example.com,resources=elasticsearchclusters,verbs=create;update,versions=v1beta1,name=velasticsearchclusterv1beta1.kb.io,admissionReviewVersions=v1
 
 var _ webhook.Validator = &ElasticsearchCluster{}
 
@@ -103,6 +103,9 @@ func (r *ElasticsearchCluster) validateElasticsearchCluster() error {
 	}
 	if r.Spec.Backup != nil && r.Spec.Backup.Enabled && r.Spec.Backup.Schedule == "" {
 		return fmt.Errorf("backup.schedule is required when backup.enabled is true")
+	}
+	if r.Spec.ILM != nil && r.Spec.ILM.Enabled && r.Spec.ILM.HotPhase == "" {
+		return fmt.Errorf("ilm.hotPhase is required when ilm.enabled is true")
 	}
 	return nil
 }

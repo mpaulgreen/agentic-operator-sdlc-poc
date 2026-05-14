@@ -33,6 +33,7 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	searchv1alpha1 "github.com/example/elasticsearch-operator/api/v1alpha1"
+	searchv1beta1 "github.com/example/elasticsearch-operator/api/v1beta1"
 	"github.com/example/elasticsearch-operator/internal/controller"
 	//+kubebuilder:scaffold:imports
 )
@@ -46,6 +47,7 @@ func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 
 	utilruntime.Must(searchv1alpha1.AddToScheme(scheme))
+	utilruntime.Must(searchv1beta1.AddToScheme(scheme))
 	//+kubebuilder:scaffold:scheme
 }
 
@@ -103,8 +105,11 @@ func main() {
 		setupLog.Error(err, "unable to create controller", "controller", "ElasticsearchCluster")
 		os.Exit(1)
 	}
-	if err = (&searchv1alpha1.ElasticsearchCluster{}).SetupWebhookWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create webhook", "webhook", "ElasticsearchCluster")
+	// Only register v1beta1 webhook — it is the storage version and a superset of v1alpha1.
+	// Registering both causes v1alpha1 webhook to strip v1beta1-only fields (ilm, maxShards)
+	// during admission, since v1alpha1 types don't have those fields.
+	if err = (&searchv1beta1.ElasticsearchCluster{}).SetupWebhookWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create webhook", "webhook", "ElasticsearchCluster v1beta1")
 		os.Exit(1)
 	}
 	//+kubebuilder:scaffold:builder

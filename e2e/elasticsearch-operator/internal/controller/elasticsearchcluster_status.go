@@ -23,10 +23,10 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	"k8s.io/apimachinery/pkg/types"
 
-	searchv1alpha1 "github.com/example/elasticsearch-operator/api/v1alpha1"
+	searchv1beta1 "github.com/example/elasticsearch-operator/api/v1beta1"
 )
 
-func (r *ElasticsearchClusterReconciler) updateStatus(ctx context.Context, cr *searchv1alpha1.ElasticsearchCluster) error {
+func (r *ElasticsearchClusterReconciler) updateStatus(ctx context.Context, cr *searchv1beta1.ElasticsearchCluster) error {
 	sts := &appsv1.StatefulSet{}
 	if err := r.Get(ctx, types.NamespacedName{Name: cr.Name, Namespace: cr.Namespace}, sts); err != nil {
 		return err
@@ -51,6 +51,8 @@ func (r *ElasticsearchClusterReconciler) updateStatus(ctx context.Context, cr *s
 		setUnavailableCondition(cr, "NotReady", "No replicas ready yet")
 		setProgressingCondition(cr, "Initializing", "Waiting for replicas to start")
 	}
+
+	cr.Status.ILMEnabled = cr.Spec.ILM != nil && cr.Spec.ILM.Enabled
 
 	if cr.Spec.Backup != nil && cr.Spec.Backup.Enabled {
 		setBackupReadyCondition(cr, "BackupConfigured", "Backup CronJob is scheduled")

@@ -36,14 +36,14 @@ import (
 
 	ctrl "sigs.k8s.io/controller-runtime"
 
-	searchv1alpha1 "github.com/example/elasticsearch-operator/api/v1alpha1"
+	searchv1beta1 "github.com/example/elasticsearch-operator/api/v1beta1"
 )
 
 var _ = Describe("ElasticsearchCluster Controller", func() {
 	var (
 		ctx        context.Context
 		reconciler *ElasticsearchClusterReconciler
-		cr         *searchv1alpha1.ElasticsearchCluster
+		cr         *searchv1beta1.ElasticsearchCluster
 		ns         *corev1.Namespace
 		crName     string
 		nsName     string
@@ -59,15 +59,15 @@ var _ = Describe("ElasticsearchCluster Controller", func() {
 		Expect(k8sClient.Create(ctx, ns)).To(Succeed())
 
 		crName = fmt.Sprintf("test-es-%d", time.Now().UnixNano())
-		cr = &searchv1alpha1.ElasticsearchCluster{
+		cr = &searchv1beta1.ElasticsearchCluster{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      crName,
 				Namespace: nsName,
 			},
-			Spec: searchv1alpha1.ElasticsearchClusterSpec{
+			Spec: searchv1beta1.ElasticsearchClusterSpec{
 				Replicas: 3,
 				Version:  "8.14",
-				Storage: searchv1alpha1.StorageSpec{
+				Storage: searchv1beta1.StorageSpec{
 					Size: "10Gi",
 				},
 				Resources: corev1.ResourceRequirements{
@@ -96,7 +96,7 @@ var _ = Describe("ElasticsearchCluster Controller", func() {
 
 	AfterEach(func() {
 		// Remove finalizer before deletion
-		current := &searchv1alpha1.ElasticsearchCluster{}
+		current := &searchv1beta1.ElasticsearchCluster{}
 		if err := k8sClient.Get(ctx, types.NamespacedName{Name: crName, Namespace: nsName}, current); err == nil {
 			if controllerutil.ContainsFinalizer(current, elasticsearchClusterFinalizer) {
 				controllerutil.RemoveFinalizer(current, elasticsearchClusterFinalizer)
@@ -115,7 +115,7 @@ var _ = Describe("ElasticsearchCluster Controller", func() {
 			_, err := reconciler.Reconcile(ctx, reconcileRequest(crName, nsName))
 			Expect(err).NotTo(HaveOccurred())
 
-			updated := &searchv1alpha1.ElasticsearchCluster{}
+			updated := &searchv1beta1.ElasticsearchCluster{}
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: crName, Namespace: nsName}, updated)).To(Succeed())
 			Expect(controllerutil.ContainsFinalizer(updated, elasticsearchClusterFinalizer)).To(BeTrue())
 		})
@@ -177,7 +177,7 @@ var _ = Describe("ElasticsearchCluster Controller", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			// Verify finalizer is present
-			updated := &searchv1alpha1.ElasticsearchCluster{}
+			updated := &searchv1beta1.ElasticsearchCluster{}
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: crName, Namespace: nsName}, updated)).To(Succeed())
 			Expect(controllerutil.ContainsFinalizer(updated, elasticsearchClusterFinalizer)).To(BeTrue())
 
@@ -226,7 +226,7 @@ var _ = Describe("ElasticsearchCluster Controller", func() {
 		})
 
 		It("should skip Secret creation when existingSecret is set", func() {
-			cr.Spec.Auth = &searchv1alpha1.AuthSpec{
+			cr.Spec.Auth = &searchv1beta1.AuthSpec{
 				ExistingSecret: "my-existing-secret",
 			}
 			Expect(reconciler.reconcileSecret(ctx, cr)).To(Succeed())
@@ -335,7 +335,7 @@ var _ = Describe("ElasticsearchCluster Controller", func() {
 	// -----------------------------------------------------------------------
 	Context("When reconciling Backup CronJob", func() {
 		It("should create CronJob when backup is enabled with schedule", func() {
-			cr.Spec.Backup = &searchv1alpha1.BackupSpec{
+			cr.Spec.Backup = &searchv1beta1.BackupSpec{
 				Enabled:  true,
 				Schedule: "0 2 * * *",
 			}
@@ -357,7 +357,7 @@ var _ = Describe("ElasticsearchCluster Controller", func() {
 		})
 
 		It("should update schedule when it changes", func() {
-			cr.Spec.Backup = &searchv1alpha1.BackupSpec{
+			cr.Spec.Backup = &searchv1beta1.BackupSpec{
 				Enabled:  true,
 				Schedule: "0 2 * * *",
 			}
@@ -378,7 +378,7 @@ var _ = Describe("ElasticsearchCluster Controller", func() {
 	// -----------------------------------------------------------------------
 	Context("When reconciling Master Deployment", func() {
 		It("should create master Deployment when enabled", func() {
-			cr.Spec.Master = &searchv1alpha1.MasterSpec{
+			cr.Spec.Master = &searchv1beta1.MasterSpec{
 				Enabled:  true,
 				Replicas: 3,
 				Resources: corev1.ResourceRequirements{
@@ -411,7 +411,7 @@ var _ = Describe("ElasticsearchCluster Controller", func() {
 		})
 
 		It("should be idempotent for master", func() {
-			cr.Spec.Master = &searchv1alpha1.MasterSpec{
+			cr.Spec.Master = &searchv1beta1.MasterSpec{
 				Enabled:  true,
 				Replicas: 3,
 			}
@@ -427,7 +427,7 @@ var _ = Describe("ElasticsearchCluster Controller", func() {
 		})
 
 		It("should delete master when disabled", func() {
-			cr.Spec.Master = &searchv1alpha1.MasterSpec{
+			cr.Spec.Master = &searchv1beta1.MasterSpec{
 				Enabled:  true,
 				Replicas: 3,
 			}

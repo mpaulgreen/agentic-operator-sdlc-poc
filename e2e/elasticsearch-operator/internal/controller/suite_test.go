@@ -29,7 +29,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 
-	searchv1alpha1 "github.com/example/elasticsearch-operator/api/v1alpha1"
+	searchv1beta1 "github.com/example/elasticsearch-operator/api/v1beta1"
 )
 
 var (
@@ -57,7 +57,7 @@ var _ = BeforeSuite(func() {
 	Expect(err).NotTo(HaveOccurred())
 	Expect(cfg).NotTo(BeNil())
 
-	err = searchv1alpha1.AddToScheme(scheme.Scheme)
+	err = searchv1beta1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 
 	k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})

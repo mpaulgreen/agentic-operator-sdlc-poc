@@ -34,7 +34,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	searchv1alpha1 "github.com/example/elasticsearch-operator/api/v1alpha1"
+	searchv1beta1 "github.com/example/elasticsearch-operator/api/v1beta1"
 )
 
 const (
@@ -64,7 +64,7 @@ func (r *ElasticsearchClusterReconciler) Reconcile(ctx context.Context, req ctrl
 	logger := log.FromContext(ctx)
 
 	// --- PHASE 1: FETCH ---
-	cr := &searchv1alpha1.ElasticsearchCluster{}
+	cr := &searchv1beta1.ElasticsearchCluster{}
 	if err := r.Get(ctx, req.NamespacedName, cr); err != nil {
 		if errors.IsNotFound(err) {
 			logger.Info("ElasticsearchCluster resource not found, likely deleted")
@@ -126,7 +126,7 @@ func (r *ElasticsearchClusterReconciler) Reconcile(ctx context.Context, req ctrl
 	return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 }
 
-func (r *ElasticsearchClusterReconciler) handleDeletion(ctx context.Context, cr *searchv1alpha1.ElasticsearchCluster) (ctrl.Result, error) {
+func (r *ElasticsearchClusterReconciler) handleDeletion(ctx context.Context, cr *searchv1beta1.ElasticsearchCluster) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 
 	if controllerutil.ContainsFinalizer(cr, elasticsearchClusterFinalizer) {
@@ -149,7 +149,7 @@ func (r *ElasticsearchClusterReconciler) handleDeletion(ctx context.Context, cr 
 	return ctrl.Result{}, nil
 }
 
-func (r *ElasticsearchClusterReconciler) handleError(ctx context.Context, cr *searchv1alpha1.ElasticsearchCluster, reason string, err error) (ctrl.Result, error) {
+func (r *ElasticsearchClusterReconciler) handleError(ctx context.Context, cr *searchv1beta1.ElasticsearchCluster, reason string, err error) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 	logger.Error(err, "Reconciliation failed", "reason", reason)
 	r.Recorder.Event(cr, corev1.EventTypeWarning, reason, err.Error())
@@ -166,7 +166,7 @@ func (r *ElasticsearchClusterReconciler) handleError(ctx context.Context, cr *se
 // SetupWithManager sets up the controller with the Manager.
 func (r *ElasticsearchClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&searchv1alpha1.ElasticsearchCluster{}).
+		For(&searchv1beta1.ElasticsearchCluster{}).
 		Owns(&corev1.Secret{}).
 		Owns(&corev1.ConfigMap{}).
 		Owns(&corev1.Service{}).

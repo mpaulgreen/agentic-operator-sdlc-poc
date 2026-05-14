@@ -1607,3 +1607,468 @@ sleep 15
 | 26 | Webhook definitions in CSV | C.10 | Both mutating + validating |
 | 27 | NetworkPolicy RBAC in CSV | C.10 | networking.k8s.io |
 | 28 | Bundle validates | C.10 | No errors |
+
+---
+---
+
+# Scenario D: API Maturity + ILM Configuration (v0.4.0)
+
+Promotes the API to v1beta1 and adds Index Lifecycle Management (ILM) configuration. Built using:
+- **Step 1** (Generate): `designing-operator-api` SKILL (Workflow D) — v1beta1 with storageversion, ILMSpec, maxShards, move webhook
+- **Step 2** (Generate): `implementing-reconciliation` SKILL (Workflow B) — Controller imports v1beta1, ILMEnabled status
+- **Step 3a** (Test): `operator-test-generator` SUBAGENT (Workflow B) — v1beta1 webhook tests (17 cases)
+- **Step 3b** (Review): `operator-reviewer` SUBAGENT — 0 Critical, 0 Warnings, 20/20 checks
+- **Step 4** (Generate): `bundling-operator` SKILL (Workflow B) — CSV v0.4.0 with maturity beta
+- **Step 5** (Validate): `operator-bundle-validator` SUBAGENT — All checks pass
+
+**Changes**: v1beta1 API with `+kubebuilder:storageversion`, ILMSpec (enabled, hotPhase, warmPhase, deletePhase), MaxShards (`*int32`), ILMEnabled status field, webhook moved from v1alpha1 to v1beta1 (v1alpha1 webhook deleted), new validation (ilm.enabled requires hotPhase), dual scheme registration in main.go, CSV v0.4.0 with replaces v0.3.0 + maturity beta + v1beta1 webhookdefinitions.
+
+**Key Elasticsearch-specific aspects**:
+- ILM is Elasticsearch's built-in index lifecycle feature (hot→warm→delete phases)
+- maxShards controls `cluster.max_shards_per_node` cluster setting
+- v1beta1 webhook path: `/mutate-search-elasticsearch-example-com-v1beta1-elasticsearchcluster`
+- v1alpha1 types preserved (backward compatibility) but webhook removed (only v1beta1 webhook registered)
+
+**Prerequisites**: Scenario C completed successfully. Operator cleaned up from cluster.
+
+## Scenario D Environment Setup
+
+```bash
+export IMG=quay.io/mpaulgreen/elasticsearch-operator:v0.4.0
+export BUNDLE_IMG=quay.io/mpaulgreen/elasticsearch-operator-bundle:v0.4.0
+export NAMESPACE=elasticsearch-operator-system
+
+cd e2e/elasticsearch-operator
+```
+
+---
+
+## Phase D.1: Build and Deploy v0.4.0
+
+### D.1.1 Build the Operator Image
+
+```bash
+make manifests
+podman build --platform linux/amd64 -t $IMG .
+podman push $IMG
+```
+
+### D.1.2 Deploy the Operator
+
+#### Option A: `make deploy` (Development — requires cert-manager)
+
+```bash
+make deploy IMG=$IMG
+```
+
+#### Option B: OLM
+
+```bash
+# Update CSV image reference
+sed -i '' "s|quay.io/mpaulgreen/elasticsearch-operator:v0.4.0|$IMG|g" bundle/manifests/elasticsearch-operator.clusterserviceversion.yaml
+
+# Refresh CRD in bundle
+cp config/crd/bases/search.elasticsearch.example.com_elasticsearchclusters.yaml bundle/manifests/
+
+# Build and push bundle
+podman build -t $BUNDLE_IMG -f bundle.Dockerfile .
+podman push $BUNDLE_IMG
+
+# Create namespace first
+oc new-project $NAMESPACE || oc create namespace $NAMESPACE
+
+# Deploy via OLM
+operator-sdk run bundle $BUNDLE_IMG --namespace $NAMESPACE --timeout 5m
+```
+
+### D.1.3 Verify Deployment
+
+```bash
+oc get pods -n $NAMESPACE -l control-plane=controller-manager
+
+# CRD has v1beta1 with ILM and maxShards fields
+oc get crd elasticsearchclusters.search.elasticsearch.example.com -o jsonpath='{.spec.versions}' | python3 -c "
+import json, sys
+versions = json.load(sys.stdin)
+for v in versions:
+    name = v['name']
+    storage = v.get('storage', False)
+    fields = sorted(v['schema']['openAPIV3Schema']['properties']['spec']['properties'].keys())
+    print(f\"{name} (storage={storage}): {fields}\")
+"
+
+# Webhook registered with v1beta1 paths
+oc get mutatingwebhookconfigurations -o yaml | grep 'elasticsearchcluster' | head -3
+oc get validatingwebhookconfigurations -o yaml | grep 'elasticsearchcluster' | head -3
+```
+
+**Expected**:
+- [ ] Pod 1/1 Running with v0.4.0 image
+- [ ] CRD has v1beta1 (storage=True) with fields: auth, backup, ilm, master, maxShards, replicas, resources, storage, version
+- [ ] Webhook paths use v1beta1 (not v1alpha1)
+
+---
+
+## Phase D.2: Existing Features Regression with v1beta1
+
+### D.2.1 Create CR Using v1beta1 API
+
+```bash
+cat <<EOF | oc apply -f -
+apiVersion: search.elasticsearch.example.com/v1beta1
+kind: ElasticsearchCluster
+metadata:
+  name: es-test
+  namespace: $NAMESPACE
+spec:
+  replicas: 3
+  version: "8.14"
+  storage:
+    size: 1Gi
+EOF
+
+sleep 30
+```
+
+### D.2.2 Verify All Resources Created
+
+```bash
+echo "=== Core Resources ==="
+oc get secret es-test-auth -n $NAMESPACE && echo "PASS: Secret" || echo "FAIL"
+oc get configmap es-test-config -n $NAMESPACE && echo "PASS: ConfigMap" || echo "FAIL"
+oc get service es-test-http -n $NAMESPACE && echo "PASS: HTTP Service" || echo "FAIL"
+oc get service es-test-transport -n $NAMESPACE && echo "PASS: Transport Service" || echo "FAIL"
+oc get statefulset es-test -n $NAMESPACE && echo "PASS: StatefulSet" || echo "FAIL"
+
+echo ""
+echo "=== NetworkPolicy ==="
+oc get networkpolicy es-test-network-policy -n $NAMESPACE && echo "PASS: NetworkPolicy" || echo "FAIL"
+
+echo ""
+echo "=== Status ==="
+oc get elasticsearchcluster es-test -n $NAMESPACE -o wide
+```
+
+**Expected**:
+- [ ] All 5 core resources + NetworkPolicy created with v1beta1 API
+- [ ] Status shows Running
+
+---
+
+## Phase D.3: v1beta1 New Fields
+
+### D.3.1 Create CR with ILM Enabled
+
+```bash
+cat <<EOF | oc apply -f -
+apiVersion: search.elasticsearch.example.com/v1beta1
+kind: ElasticsearchCluster
+metadata:
+  name: es-ilm
+  namespace: $NAMESPACE
+spec:
+  replicas: 3
+  version: "8.14"
+  storage:
+    size: 1Gi
+  ilm:
+    enabled: true
+    hotPhase: "30d"
+    warmPhase: "90d"
+    deletePhase: "365d"
+  maxShards: 1000
+EOF
+
+sleep 15
+```
+
+### D.3.2 Verify ILM Fields and Status
+
+```bash
+echo "=== ILM Spec ==="
+oc get elasticsearchcluster es-ilm -n $NAMESPACE -o jsonpath='{.spec.ilm}' | python3 -m json.tool
+
+echo ""
+echo "=== MaxShards ==="
+oc get elasticsearchcluster es-ilm -n $NAMESPACE -o jsonpath='{.spec.maxShards}' && echo " (should be 1000)"
+
+echo ""
+echo "=== ILMEnabled Status ==="
+oc get elasticsearchcluster es-ilm -n $NAMESPACE -o jsonpath='{.status.ilmEnabled}' && echo " (should be true)"
+```
+
+**Expected**:
+- [ ] ILM spec has enabled=true, hotPhase=30d, warmPhase=90d, deletePhase=365d
+- [ ] maxShards = 1000
+- [ ] status.ilmEnabled = true
+
+### D.3.3 Cleanup ILM Test CR
+
+```bash
+oc delete elasticsearchcluster es-ilm -n $NAMESPACE
+sleep 10
+```
+
+---
+
+## Phase D.4: Webhook Defaulting (v1beta1)
+
+### D.4.1 Defaults Still Applied via v1beta1 Webhook
+
+```bash
+cat <<EOF | oc apply -f -
+apiVersion: search.elasticsearch.example.com/v1beta1
+kind: ElasticsearchCluster
+metadata:
+  name: es-v1beta1-defaults
+  namespace: $NAMESPACE
+spec:
+  storage:
+    size: 1Gi
+EOF
+
+sleep 5
+oc get elasticsearchcluster es-v1beta1-defaults -n $NAMESPACE -o jsonpath='{.spec.replicas}' && echo " (should be 3)"
+oc get elasticsearchcluster es-v1beta1-defaults -n $NAMESPACE -o jsonpath='{.spec.version}' && echo " (should be 8.14)"
+
+oc delete elasticsearchcluster es-v1beta1-defaults -n $NAMESPACE
+sleep 10
+```
+
+**Expected**:
+- [ ] Replicas defaulted to 3
+- [ ] Version defaulted to "8.14"
+
+---
+
+## Phase D.5: Webhook Validation Create (v1beta1)
+
+### D.5.1 Reject ILM Enabled Without hotPhase (New Validation)
+
+```bash
+cat <<EOF | oc apply -f - 2>&1
+apiVersion: search.elasticsearch.example.com/v1beta1
+kind: ElasticsearchCluster
+metadata:
+  name: es-bad
+  namespace: $NAMESPACE
+spec:
+  replicas: 3
+  version: "8.14"
+  storage:
+    size: 1Gi
+  ilm:
+    enabled: true
+EOF
+```
+
+**Expected**: Rejected — `ilm.hotPhase is required when ilm.enabled is true`.
+
+### D.5.2 Existing Validations Still Work (Even Master Quorum)
+
+```bash
+cat <<EOF | oc apply -f - 2>&1
+apiVersion: search.elasticsearch.example.com/v1beta1
+kind: ElasticsearchCluster
+metadata:
+  name: es-bad
+  namespace: $NAMESPACE
+spec:
+  replicas: 3
+  version: "8.14"
+  storage:
+    size: 1Gi
+  master:
+    enabled: true
+    replicas: 4
+EOF
+```
+
+**Expected**: Rejected — `master.replicas must be odd for quorum, got 4`.
+
+---
+
+## Phase D.6: Webhook Validation Update (v1beta1)
+
+### D.6.1 Reject Storage Size Reduction
+
+```bash
+oc patch elasticsearchcluster es-test -n $NAMESPACE --type merge -p '{"spec":{"storage":{"size":"500Mi"}}}' 2>&1
+```
+
+**Expected**: Rejected — `storage size cannot be reduced from 1Gi to 500Mi`.
+
+### D.6.2 Allow Storage Size Increase
+
+```bash
+oc patch elasticsearchcluster es-test -n $NAMESPACE --type merge -p '{"spec":{"storage":{"size":"2Gi"}}}'
+```
+
+**Expected**: Accepted.
+
+---
+
+## Phase D.7: v1alpha1 Backward Compatibility
+
+### D.7.1 Create CR Using v1alpha1 API Version
+
+```bash
+cat <<EOF | oc apply -f -
+apiVersion: search.elasticsearch.example.com/v1alpha1
+kind: ElasticsearchCluster
+metadata:
+  name: es-v1alpha1
+  namespace: $NAMESPACE
+spec:
+  replicas: 3
+  version: "8.14"
+  storage:
+    size: 1Gi
+EOF
+
+sleep 10
+oc get elasticsearchcluster es-v1alpha1 -n $NAMESPACE -o wide
+```
+
+**Expected**:
+- [ ] v1alpha1 CR accepted (API server converts to v1beta1 storage)
+
+### D.7.2 Verify v1alpha1 CR Has No ILM Fields
+
+```bash
+oc get elasticsearchcluster es-v1alpha1 -n $NAMESPACE -o jsonpath='{.spec.ilm}' && echo " (should be empty)" || echo "No ILM (correct)"
+oc get elasticsearchcluster es-v1alpha1 -n $NAMESPACE -o jsonpath='{.spec.maxShards}' && echo " (should be empty)" || echo "No maxShards (correct)"
+
+oc delete elasticsearchcluster es-v1alpha1 -n $NAMESPACE
+sleep 10
+```
+
+**Expected**:
+- [ ] v1alpha1 CR does not have ilm or maxShards fields
+
+---
+
+## Phase D.8: Idempotency
+
+### D.8.1 Re-reconcile and Verify No Duplicates
+
+```bash
+oc delete pod -n $NAMESPACE -l control-plane=controller-manager
+oc wait --for=condition=available deployment -l control-plane=controller-manager -n $NAMESPACE --timeout=60s
+sleep 15
+
+echo "StatefulSets: $(oc get statefulset -n $NAMESPACE 2>&1 | grep -c es-test) (should be 1)"
+echo "NetworkPolicies: $(oc get networkpolicy -n $NAMESPACE 2>&1 | grep -c es-test-network-policy) (should be 1)"
+echo "Secrets: $(oc get secret -n $NAMESPACE 2>&1 | grep -c es-test-auth) (should be 1)"
+```
+
+**Expected**: Exactly 1 of each, no duplicates.
+
+---
+
+## Phase D.9: Delete CR
+
+### D.9.1 Delete and Verify All Resources Cleaned
+
+```bash
+oc delete elasticsearchcluster es-test -n $NAMESPACE
+sleep 15
+
+oc get secret es-test-auth -n $NAMESPACE 2>&1 | grep "not found" && echo "PASS: Secret cleaned"
+oc get configmap es-test-config -n $NAMESPACE 2>&1 | grep "not found" && echo "PASS: ConfigMap cleaned"
+oc get service es-test-http -n $NAMESPACE 2>&1 | grep "not found" && echo "PASS: HTTP Service cleaned"
+oc get service es-test-transport -n $NAMESPACE 2>&1 | grep "not found" && echo "PASS: Transport Service cleaned"
+oc get statefulset es-test -n $NAMESPACE 2>&1 | grep "not found" && echo "PASS: StatefulSet cleaned"
+oc get networkpolicy es-test-network-policy -n $NAMESPACE 2>&1 | grep "not found" && echo "PASS: NetworkPolicy cleaned"
+```
+
+**Expected**:
+- [ ] All 6 managed resources garbage collected
+
+---
+
+## Phase D.10: OLM Bundle Validation
+
+### D.10.1 Verify Bundle Version and Maturity
+
+```bash
+echo "=== CSV Version ==="
+grep 'name:.*elasticsearch-operator.v' bundle/manifests/elasticsearch-operator.clusterserviceversion.yaml | head -1
+grep 'replaces:' bundle/manifests/elasticsearch-operator.clusterserviceversion.yaml
+grep '^  version:' bundle/manifests/elasticsearch-operator.clusterserviceversion.yaml
+grep 'maturity:' bundle/manifests/elasticsearch-operator.clusterserviceversion.yaml
+```
+
+**Expected**:
+- [ ] CSV name: `elasticsearch-operator.v0.4.0`
+- [ ] replaces: `elasticsearch-operator.v0.3.0`
+- [ ] version: `0.4.0`
+- [ ] maturity: `beta` (promoted from alpha)
+
+### D.10.2 Verify v1beta1 Webhook Definitions Only
+
+```bash
+grep 'webhookPath' bundle/manifests/elasticsearch-operator.clusterserviceversion.yaml
+```
+
+**Expected**: Both paths use `v1beta1` (not v1alpha1).
+
+### D.10.3 Verify ILM Descriptors in CSV
+
+```bash
+grep -E 'ilm|maxShards' bundle/manifests/elasticsearch-operator.clusterserviceversion.yaml | grep 'path:' | head -10
+```
+
+**Expected**: specDescriptors for ilm, ilm.enabled, ilm.hotPhase, ilm.warmPhase, ilm.deletePhase, maxShards + statusDescriptor for ilmEnabled.
+
+### D.10.4 Bundle Validate
+
+```bash
+operator-sdk bundle validate bundle/
+```
+
+**Expected**: No errors.
+
+---
+
+## Scenario D Cleanup
+
+```bash
+oc delete elasticsearchcluster --all -n $NAMESPACE
+sleep 15
+
+# If NOT continuing to Scenario E, undeploy:
+# make undeploy                                                        # if deployed with make deploy
+# operator-sdk cleanup elasticsearch-operator --namespace $NAMESPACE    # if deployed with OLM
+# oc delete project $NAMESPACE
+```
+
+---
+
+## Scenario D Summary Checklist
+
+| # | Test | Phase | Expected |
+|---|------|-------|----------|
+| 1 | Operator deploys with v0.4.0 image | D.1 | Pod Running |
+| 2 | CRD has v1beta1 (storage) with ilm + maxShards fields | D.1 | 9 spec fields |
+| 3 | Webhook paths use v1beta1 | D.1 | Not v1alpha1 |
+| 4 | All resources created with v1beta1 API | D.2 | 5 core + NP |
+| 5 | Status shows Running | D.2 | Phase=Running |
+| 6 | ILM spec fields accepted (hotPhase, warmPhase, deletePhase) | D.3 | All present |
+| 7 | maxShards field accepted | D.3 | 1000 |
+| 8 | status.ilmEnabled = true when ILM enabled | D.3 | true |
+| 9 | Replicas defaulted to 3 via v1beta1 webhook | D.4 | Defaulting works |
+| 10 | Version defaulted to "8.14" via v1beta1 webhook | D.4 | Defaulting works |
+| 11 | Reject ILM enabled without hotPhase | D.5 | New validation |
+| 12 | Existing validations work (even master quorum) | D.5 | Carried forward |
+| 13 | Reject storage size reduction | D.6 | Update validation |
+| 14 | Allow storage size increase | D.6 | Accepted |
+| 15 | v1alpha1 CR accepted (backward compatible) | D.7 | API server converts |
+| 16 | v1alpha1 CR has no ILM/maxShards fields | D.7 | Not in v1alpha1 |
+| 17 | Idempotent — no duplicates | D.8 | Exactly 1 each |
+| 18 | All 6 resources cleaned on delete | D.9 | Including NP |
+| 19 | CSV version 0.4.0 with replaces v0.3.0 | D.10 | Correct upgrade |
+| 20 | Maturity promoted to beta | D.10 | alpha → beta |
+| 21 | Webhook definitions use v1beta1 paths only | D.10 | Not v1alpha1 |
+| 22 | ILM descriptors in CSV | D.10 | ilm.*, maxShards, ilmEnabled |
+| 23 | Bundle validates | D.10 | No errors |

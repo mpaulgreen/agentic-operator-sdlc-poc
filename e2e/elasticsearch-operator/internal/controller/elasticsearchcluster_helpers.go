@@ -20,7 +20,7 @@ import (
 	"crypto/rand"
 	"math/big"
 
-	searchv1alpha1 "github.com/example/elasticsearch-operator/api/v1alpha1"
+	searchv1beta1 "github.com/example/elasticsearch-operator/api/v1beta1"
 )
 
 const (
@@ -28,7 +28,7 @@ const (
 	passwordCharset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 )
 
-func labelsForElasticsearchCluster(cr *searchv1alpha1.ElasticsearchCluster) map[string]string {
+func labelsForElasticsearchCluster(cr *searchv1beta1.ElasticsearchCluster) map[string]string {
 	return map[string]string{
 		"app.kubernetes.io/name":       "elasticsearch",
 		"app.kubernetes.io/instance":   cr.Name,

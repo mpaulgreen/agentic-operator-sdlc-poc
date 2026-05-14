@@ -5,7 +5,7 @@ metadata:
     alm-examples: |-
       [
         {
-          "apiVersion": "search.elasticsearch.example.com/v1alpha1",
+          "apiVersion": "search.elasticsearch.example.com/v1beta1",
           "kind": "ElasticsearchCluster",
           "metadata": {
             "labels": {
@@ -34,7 +34,7 @@ metadata:
     operators.operatorframework.io/builder: operator-sdk-v1.37.0
     operators.operatorframework.io/project_layout: go.kubebuilder.io/v4
     repository: https://github.com/example/elasticsearch-operator
-  name: elasticsearch-operator.v0.3.0
+  name: elasticsearch-operator.v0.4.0
   namespace: placeholder
 spec:
   apiservicedefinitions: {}
@@ -44,7 +44,7 @@ spec:
       displayName: Elasticsearch Cluster
       kind: ElasticsearchCluster
       name: elasticsearchclusters.search.elasticsearch.example.com
-      version: v1alpha1
+      version: v1beta1
       resources:
       - kind: StatefulSet
         version: v1
@@ -94,6 +94,24 @@ spec:
       - path: master.replicas
         displayName: Master Replicas
         description: Number of master nodes
+      - path: ilm
+        displayName: ILM
+        description: Index Lifecycle Management configuration
+      - path: ilm.enabled
+        displayName: ILM Enabled
+        description: Whether ILM is active
+      - path: ilm.hotPhase
+        displayName: Hot Phase
+        description: Duration for the hot phase
+      - path: ilm.warmPhase
+        displayName: Warm Phase
+        description: Duration for the warm phase
+      - path: ilm.deletePhase
+        displayName: Delete Phase
+        description: Duration for the delete phase
+      - path: maxShards
+        displayName: Max Shards
+        description: Maximum shards per node setting
       statusDescriptors:
       - path: phase
         displayName: Phase
@@ -107,6 +125,9 @@ spec:
       - path: httpEndpoint
         displayName: HTTP Endpoint
         description: HTTP service connection endpoint for the Elasticsearch cluster
+      - path: ilmEnabled
+        displayName: ILM Enabled
+        description: Whether ILM is currently active
       - path: conditions
         displayName: Conditions
         description: Latest available observations of the resource state
@@ -277,7 +298,7 @@ spec:
                 - --leader-elect
                 command:
                 - /manager
-                image: quay.io/mpaulgreen/elasticsearch-operator:v0.3.0
+                image: quay.io/mpaulgreen/elasticsearch-operator:v0.4.0
                 livenessProbe:
                   httpGet:
                     path: /healthz
@@ -357,12 +378,12 @@ spec:
     containerPort: 9443
     deploymentName: elasticsearch-operator-controller-manager
     failurePolicy: Fail
-    generateName: melasticsearchcluster.kb.io
+    generateName: melasticsearchclusterv1beta1.kb.io
     rules:
     - apiGroups:
       - search.elasticsearch.example.com
       apiVersions:
-      - v1alpha1
+      - v1beta1
       operations:
       - CREATE
       - UPDATE
@@ -371,18 +392,18 @@ spec:
     sideEffects: None
     targetPort: 9443
     type: MutatingAdmissionWebhook
-    webhookPath: /mutate-search-elasticsearch-example-com-v1alpha1-elasticsearchcluster
+    webhookPath: /mutate-search-elasticsearch-example-com-v1beta1-elasticsearchcluster
   - admissionReviewVersions:
     - v1
     containerPort: 9443
     deploymentName: elasticsearch-operator-controller-manager
     failurePolicy: Fail
-    generateName: velasticsearchcluster.kb.io
+    generateName: velasticsearchclusterv1beta1.kb.io
     rules:
     - apiGroups:
       - search.elasticsearch.example.com
       apiVersions:
-      - v1alpha1
+      - v1beta1
       operations:
       - CREATE
       - UPDATE
@@ -391,7 +412,7 @@ spec:
     sideEffects: None
     targetPort: 9443
     type: ValidatingAdmissionWebhook
-    webhookPath: /validate-search-elasticsearch-example-com-v1alpha1-elasticsearchcluster
+    webhookPath: /validate-search-elasticsearch-example-com-v1beta1-elasticsearchcluster
   keywords:
   - elasticsearch
   - search
@@ -404,10 +425,10 @@ spec:
   maintainers:
   - email: maintainer@example.com
     name: Maintainer
-  maturity: alpha
+  maturity: beta
   minKubeVersion: "1.25.0"
   provider:
     name: Example
     url: https://example.com
-  replaces: elasticsearch-operator.v0.2.0
-  version: 0.3.0
+  replaces: elasticsearch-operator.v0.3.0
+  version: 0.4.0

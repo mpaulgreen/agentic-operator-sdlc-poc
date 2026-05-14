@@ -10,14 +10,14 @@ webhooks:
     service:
       name: webhook-service
       namespace: system
-      path: /mutate-search-elasticsearch-example-com-v1alpha1-elasticsearchcluster
+      path: /mutate-search-elasticsearch-example-com-v1beta1-elasticsearchcluster
   failurePolicy: Fail
-  name: melasticsearchcluster.kb.io
+  name: melasticsearchclusterv1beta1.kb.io
   rules:
   - apiGroups:
     - search.elasticsearch.example.com
     apiVersions:
-    - v1alpha1
+    - v1beta1
     operations:
     - CREATE
     - UPDATE
@@ -36,14 +36,14 @@ webhooks:
     service:
       name: webhook-service
       namespace: system
-      path: /validate-search-elasticsearch-example-com-v1alpha1-elasticsearchcluster
+      path: /validate-search-elasticsearch-example-com-v1beta1-elasticsearchcluster
   failurePolicy: Fail
-  name: velasticsearchcluster.kb.io
+  name: velasticsearchclusterv1beta1.kb.io
   rules:
   - apiGroups:
     - search.elasticsearch.example.com
     apiVersions:
-    - v1alpha1
+    - v1beta1
     operations:
     - CREATE
     - UPDATE

@@ -32,10 +32,10 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
-	searchv1alpha1 "github.com/example/elasticsearch-operator/api/v1alpha1"
+	searchv1beta1 "github.com/example/elasticsearch-operator/api/v1beta1"
 )
 
-func (r *ElasticsearchClusterReconciler) reconcileSecret(ctx context.Context, cr *searchv1alpha1.ElasticsearchCluster) error {
+func (r *ElasticsearchClusterReconciler) reconcileSecret(ctx context.Context, cr *searchv1beta1.ElasticsearchCluster) error {
 	if cr.Spec.Auth != nil && cr.Spec.Auth.ExistingSecret != "" {
 		return nil
 	}
@@ -76,7 +76,7 @@ func (r *ElasticsearchClusterReconciler) reconcileSecret(ctx context.Context, cr
 	return nil
 }
 
-func (r *ElasticsearchClusterReconciler) reconcileConfigMap(ctx context.Context, cr *searchv1alpha1.ElasticsearchCluster) error {
+func (r *ElasticsearchClusterReconciler) reconcileConfigMap(ctx context.Context, cr *searchv1beta1.ElasticsearchCluster) error {
 	name := fmt.Sprintf("%s-config", cr.Name)
 	existing := &corev1.ConfigMap{}
 	err := r.Get(ctx, types.NamespacedName{Name: name, Namespace: cr.Namespace}, existing)
@@ -114,7 +114,7 @@ discovery.seed_hosts:
 	return nil
 }
 
-func (r *ElasticsearchClusterReconciler) reconcileHTTPService(ctx context.Context, cr *searchv1alpha1.ElasticsearchCluster) error {
+func (r *ElasticsearchClusterReconciler) reconcileHTTPService(ctx context.Context, cr *searchv1beta1.ElasticsearchCluster) error {
 	name := fmt.Sprintf("%s-http", cr.Name)
 	existing := &corev1.Service{}
 	err := r.Get(ctx, types.NamespacedName{Name: name, Namespace: cr.Namespace}, existing)
@@ -149,7 +149,7 @@ func (r *ElasticsearchClusterReconciler) reconcileHTTPService(ctx context.Contex
 	return nil
 }
 
-func (r *ElasticsearchClusterReconciler) reconcileTransportService(ctx context.Context, cr *searchv1alpha1.ElasticsearchCluster) error {
+func (r *ElasticsearchClusterReconciler) reconcileTransportService(ctx context.Context, cr *searchv1beta1.ElasticsearchCluster) error {
 	name := fmt.Sprintf("%s-transport", cr.Name)
 	existing := &corev1.Service{}
 	err := r.Get(ctx, types.NamespacedName{Name: name, Namespace: cr.Namespace}, existing)
@@ -184,7 +184,7 @@ func (r *ElasticsearchClusterReconciler) reconcileTransportService(ctx context.C
 	return nil
 }
 
-func (r *ElasticsearchClusterReconciler) reconcileStatefulSet(ctx context.Context, cr *searchv1alpha1.ElasticsearchCluster) error {
+func (r *ElasticsearchClusterReconciler) reconcileStatefulSet(ctx context.Context, cr *searchv1beta1.ElasticsearchCluster) error {
 	name := cr.Name
 	existing := &appsv1.StatefulSet{}
 	err := r.Get(ctx, types.NamespacedName{Name: name, Namespace: cr.Namespace}, existing)
@@ -280,7 +280,7 @@ func (r *ElasticsearchClusterReconciler) reconcileStatefulSet(ctx context.Contex
 	return nil
 }
 
-func (r *ElasticsearchClusterReconciler) reconcileMaster(ctx context.Context, cr *searchv1alpha1.ElasticsearchCluster) error {
+func (r *ElasticsearchClusterReconciler) reconcileMaster(ctx context.Context, cr *searchv1beta1.ElasticsearchCluster) error {
 	name := fmt.Sprintf("%s-master", cr.Name)
 
 	if cr.Spec.Master == nil || !cr.Spec.Master.Enabled {
@@ -371,7 +371,7 @@ func (r *ElasticsearchClusterReconciler) reconcileMaster(ctx context.Context, cr
 	return nil
 }
 
-func (r *ElasticsearchClusterReconciler) reconcileBackupCronJob(ctx context.Context, cr *searchv1alpha1.ElasticsearchCluster) error {
+func (r *ElasticsearchClusterReconciler) reconcileBackupCronJob(ctx context.Context, cr *searchv1beta1.ElasticsearchCluster) error {
 	if cr.Spec.Backup == nil || !cr.Spec.Backup.Enabled {
 		clearBackupReadyCondition(cr, "BackupDisabled", "Backup is not enabled")
 		return nil
@@ -432,7 +432,7 @@ func (r *ElasticsearchClusterReconciler) reconcileBackupCronJob(ctx context.Cont
 	return nil
 }
 
-func (r *ElasticsearchClusterReconciler) reconcileNetworkPolicy(ctx context.Context, cr *searchv1alpha1.ElasticsearchCluster) error {
+func (r *ElasticsearchClusterReconciler) reconcileNetworkPolicy(ctx context.Context, cr *searchv1beta1.ElasticsearchCluster) error {
 	name := fmt.Sprintf("%s-network-policy", cr.Name)
 	existing := &networkingv1.NetworkPolicy{}
 	err := r.Get(ctx, types.NamespacedName{Name: name, Namespace: cr.Namespace}, existing)
