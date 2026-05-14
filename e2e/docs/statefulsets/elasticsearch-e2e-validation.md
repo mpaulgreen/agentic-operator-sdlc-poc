@@ -1056,3 +1056,554 @@ sleep 15
 | 17 | Master descriptors in CSV | B.8 | master.* fields present |
 | 18 | Deployment RBAC in CSV | B.8 | apps/deployments |
 | 19 | Bundle validates | B.8 | No errors |
+
+---
+---
+
+# Scenario C: Webhooks + Network Security (v0.3.0)
+
+Adds admission webhooks (defaulting + validating) and a NetworkPolicy for network isolation. Built using:
+- **Step 1** (Generate): `designing-operator-api` SKILL (Workflow C) — Webhook handler + 9 config files
+- **Step 2** (Generate): `implementing-reconciliation` SKILL (Workflow B) — reconcileNetworkPolicy + NetworkSecured condition
+- **Step 3a** (Test): `operator-test-generator` SUBAGENT (Workflow B) — NP + webhook tests
+- **Step 3b** (Review): `operator-reviewer` SUBAGENT — Reviewed all changes (0 Critical)
+- **Step 4** (Generate): `bundling-operator` SKILL (Workflow B) — CSV v0.3.0 with webhookdefinitions
+- **Step 5** (Validate): `operator-bundle-validator` SUBAGENT — Validated bundle
+
+**Changes**: Webhook handler (`Default()` + `ValidateCreate/Update/Delete()`), 9 webhook config files with kustomize replacements for cert-manager TLS, `reconcileNetworkPolicy()` (check-create, two ingress ports 9200+9300, DNS + intra-cluster egress), NetworkSecured condition, CSV v0.3.0 with replaces v0.2.0 + webhookdefinitions + networkpolicies RBAC.
+
+**Key differences from prior Scenario C operators**:
+
+| Aspect | PostgreSQL C | Redis C | MongoDB C | ES C |
+|--------|-------------|---------|-----------|------|
+| Ingress ports | 5432 | 6379+26379 | 27017 | 9200+9300 (two ports) |
+| Egress replication | 5432 | 6379 | 27017 | 9200+9300 (two ports) |
+| Quorum validation | N/A | sentinel odd | replicas odd | master.replicas odd |
+| RetentionDays default | N/A | N/A | backup.retentionDays=7 | backup.retentionDays=7 |
+| Webhook API version | v1alpha1 | v1alpha1 | v1alpha1 | v1alpha1 |
+
+**Prerequisites**: Scenario B completed successfully. All Scenario B CRs deleted. Operator cleaned up from cluster.
+
+## Scenario C Environment Setup
+
+```bash
+export IMG=quay.io/mpaulgreen/elasticsearch-operator:v0.3.0
+export BUNDLE_IMG=quay.io/mpaulgreen/elasticsearch-operator-bundle:v0.3.0
+export NAMESPACE=elasticsearch-operator-system
+
+cd e2e/elasticsearch-operator
+```
+
+---
+
+## Phase C.1: Build and Deploy v0.3.0
+
+### C.1.1 Verify cert-manager is Running
+
+```bash
+oc get pods -n cert-manager
+```
+
+**Expected**: cert-manager, cert-manager-cainjector, cert-manager-webhook pods all Running. If not installed, install cert-manager first:
+```bash
+oc apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.14.5/cert-manager.yaml
+oc wait --for=condition=available deployment -n cert-manager --all --timeout=120s
+```
+
+### C.1.2 Build the Operator Image
+
+```bash
+make manifests
+podman build --platform linux/amd64 -t $IMG .
+podman push $IMG
+```
+
+### C.1.3 Deploy the Operator
+
+#### Option A: `make deploy` (Development — requires cert-manager)
+
+```bash
+make deploy IMG=$IMG
+```
+
+#### Option B: OLM
+
+```bash
+# Update CSV image reference
+sed -i '' "s|quay.io/mpaulgreen/elasticsearch-operator:v0.3.0|$IMG|g" bundle/manifests/elasticsearch-operator.clusterserviceversion.yaml
+
+# Refresh CRD in bundle
+cp config/crd/bases/search.elasticsearch.example.com_elasticsearchclusters.yaml bundle/manifests/
+
+# Build and push bundle
+podman build -t $BUNDLE_IMG -f bundle.Dockerfile .
+podman push $BUNDLE_IMG
+
+# Create namespace first
+oc new-project $NAMESPACE || oc create namespace $NAMESPACE
+
+# Deploy via OLM
+operator-sdk run bundle $BUNDLE_IMG --namespace $NAMESPACE --timeout 5m
+```
+
+### C.1.4 Verify Deployment
+
+```bash
+oc get pods -n $NAMESPACE -l control-plane=controller-manager
+oc logs -n $NAMESPACE -l control-plane=controller-manager --tail=20
+
+# Webhook Service exists
+oc get service -n $NAMESPACE | grep webhook
+
+# Webhook configurations registered
+oc get mutatingwebhookconfigurations | grep elasticsearch
+oc get validatingwebhookconfigurations | grep elasticsearch
+
+# Controller watching 8 EventSources (added NetworkPolicy)
+oc logs -n $NAMESPACE -l control-plane=controller-manager --tail=30 | grep -E "Starting EventSource|Starting workers"
+```
+
+**Expected**:
+- [ ] Pod 1/1 Running with v0.3.0 image
+- [ ] Webhook Service exists on port 443
+- [ ] MutatingWebhookConfiguration and ValidatingWebhookConfiguration registered
+- [ ] Controller watching 8 EventSources (added NetworkPolicy)
+
+---
+
+## Phase C.2: Existing Features Regression
+
+### C.2.1 Create CR Without Master or Backup
+
+```bash
+cat <<EOF | oc apply -f -
+apiVersion: search.elasticsearch.example.com/v1alpha1
+kind: ElasticsearchCluster
+metadata:
+  name: es-test
+  namespace: $NAMESPACE
+spec:
+  replicas: 3
+  version: "8.14"
+  storage:
+    size: 1Gi
+EOF
+
+sleep 30
+```
+
+### C.2.2 Verify All Scenario A Resources + NetworkPolicy Created
+
+```bash
+echo "=== Core Resources ==="
+oc get secret es-test-auth -n $NAMESPACE && echo "PASS: Secret" || echo "FAIL"
+oc get configmap es-test-config -n $NAMESPACE && echo "PASS: ConfigMap" || echo "FAIL"
+oc get service es-test-http -n $NAMESPACE && echo "PASS: HTTP Service" || echo "FAIL"
+oc get service es-test-transport -n $NAMESPACE && echo "PASS: Transport Service" || echo "FAIL"
+oc get statefulset es-test -n $NAMESPACE && echo "PASS: StatefulSet" || echo "FAIL"
+
+echo ""
+echo "=== NetworkPolicy (always created) ==="
+oc get networkpolicy es-test-network-policy -n $NAMESPACE && echo "PASS: NetworkPolicy" || echo "FAIL"
+
+echo ""
+echo "=== No Master/Backup (not configured) ==="
+oc get deployment es-test-master -n $NAMESPACE 2>&1 | grep "not found" && echo "PASS: No Master" || echo "FAIL"
+oc get cronjob es-test-backup -n $NAMESPACE 2>&1 | grep "not found" && echo "PASS: No Backup" || echo "FAIL"
+
+echo ""
+echo "=== Status ==="
+oc get elasticsearchcluster es-test -n $NAMESPACE -o wide
+```
+
+**Expected**:
+- [ ] All 5 core resources created (Secret, ConfigMap, Service×2, StatefulSet)
+- [ ] NetworkPolicy `es-test-network-policy` created (always, not conditional)
+- [ ] No master Deployment, no backup CronJob
+
+---
+
+## Phase C.3: Webhook Defaulting
+
+### C.3.1 Defaults Applied for replicas and version
+
+```bash
+cat <<EOF | oc apply -f -
+apiVersion: search.elasticsearch.example.com/v1alpha1
+kind: ElasticsearchCluster
+metadata:
+  name: es-defaults
+  namespace: $NAMESPACE
+spec:
+  storage:
+    size: 1Gi
+EOF
+
+sleep 5
+oc get elasticsearchcluster es-defaults -n $NAMESPACE -o jsonpath='{.spec.replicas}' && echo " (should be 3)"
+oc get elasticsearchcluster es-defaults -n $NAMESPACE -o jsonpath='{.spec.version}' && echo " (should be 8.14)"
+```
+
+**Expected**:
+- [ ] Replicas defaulted to 3 (was 0/omitted)
+- [ ] Version defaulted to "8.14" (was empty)
+
+### C.3.2 backup.retentionDays Defaulted
+
+```bash
+cat <<EOF | oc apply -f -
+apiVersion: search.elasticsearch.example.com/v1alpha1
+kind: ElasticsearchCluster
+metadata:
+  name: es-backup-default
+  namespace: $NAMESPACE
+spec:
+  replicas: 3
+  version: "8.14"
+  storage:
+    size: 1Gi
+  backup:
+    enabled: true
+    schedule: "0 2 * * *"
+EOF
+
+sleep 5
+oc get elasticsearchcluster es-backup-default -n $NAMESPACE -o jsonpath='{.spec.backup.retentionDays}' && echo " (should be 7)"
+```
+
+**Expected**:
+- [ ] backup.retentionDays defaulted to 7
+
+### C.3.3 master.replicas Defaulted
+
+```bash
+cat <<EOF | oc apply -f -
+apiVersion: search.elasticsearch.example.com/v1alpha1
+kind: ElasticsearchCluster
+metadata:
+  name: es-master-default
+  namespace: $NAMESPACE
+spec:
+  replicas: 3
+  version: "8.14"
+  storage:
+    size: 1Gi
+  master:
+    enabled: true
+EOF
+
+sleep 5
+oc get elasticsearchcluster es-master-default -n $NAMESPACE -o jsonpath='{.spec.master.replicas}' && echo " (should be 3)"
+```
+
+**Expected**:
+- [ ] master.replicas defaulted to 3
+
+### C.3.4 Cleanup Defaulting Test CRs
+
+```bash
+oc delete elasticsearchcluster es-defaults es-backup-default es-master-default -n $NAMESPACE
+sleep 10
+```
+
+---
+
+## Phase C.4: Webhook Validation (Create)
+
+### C.4.1 Reject replicas < 1
+
+```bash
+cat <<EOF | oc apply -f - 2>&1
+apiVersion: search.elasticsearch.example.com/v1alpha1
+kind: ElasticsearchCluster
+metadata:
+  name: es-bad
+  namespace: $NAMESPACE
+spec:
+  replicas: -1
+  version: "8.14"
+  storage:
+    size: 1Gi
+EOF
+```
+
+**Expected**: Rejected — `replicas must be at least 1`.
+
+### C.4.2 Reject Even master.replicas (Quorum)
+
+```bash
+cat <<EOF | oc apply -f - 2>&1
+apiVersion: search.elasticsearch.example.com/v1alpha1
+kind: ElasticsearchCluster
+metadata:
+  name: es-bad
+  namespace: $NAMESPACE
+spec:
+  replicas: 3
+  version: "8.14"
+  storage:
+    size: 1Gi
+  master:
+    enabled: true
+    replicas: 4
+EOF
+```
+
+**Expected**: Rejected — `master.replicas must be odd for quorum, got 4`.
+
+### C.4.3 Reject Mutual Exclusion (auth.adminPassword + auth.existingSecret)
+
+```bash
+cat <<EOF | oc apply -f - 2>&1
+apiVersion: search.elasticsearch.example.com/v1alpha1
+kind: ElasticsearchCluster
+metadata:
+  name: es-bad
+  namespace: $NAMESPACE
+spec:
+  replicas: 3
+  version: "8.14"
+  storage:
+    size: 1Gi
+  auth:
+    adminPassword: "mypassword"
+    existingSecret: "my-secret"
+EOF
+```
+
+**Expected**: Rejected — `auth.adminPassword and auth.existingSecret are mutually exclusive`.
+
+### C.4.4 Reject Backup Enabled Without Schedule
+
+```bash
+cat <<EOF | oc apply -f - 2>&1
+apiVersion: search.elasticsearch.example.com/v1alpha1
+kind: ElasticsearchCluster
+metadata:
+  name: es-bad
+  namespace: $NAMESPACE
+spec:
+  replicas: 3
+  version: "8.14"
+  storage:
+    size: 1Gi
+  backup:
+    enabled: true
+EOF
+```
+
+**Expected**: Rejected — `backup.schedule is required when backup.enabled is true`.
+
+---
+
+## Phase C.5: Webhook Validation (Update)
+
+### C.5.1 Reject Storage Size Reduction
+
+```bash
+oc patch elasticsearchcluster es-test -n $NAMESPACE --type merge -p '{"spec":{"storage":{"size":"500Mi"}}}' 2>&1
+```
+
+**Expected**: Rejected — `storage size cannot be reduced from 1Gi to 500Mi`.
+
+### C.5.2 Allow Storage Size Increase
+
+```bash
+oc patch elasticsearchcluster es-test -n $NAMESPACE --type merge -p '{"spec":{"storage":{"size":"2Gi"}}}'
+```
+
+**Expected**: Accepted — storage can increase.
+
+---
+
+## Phase C.6: NetworkPolicy
+
+### C.6.1 Verify NetworkPolicy Details
+
+```bash
+echo "=== NetworkPolicy ==="
+oc get networkpolicy es-test-network-policy -n $NAMESPACE
+
+echo ""
+echo "=== Ingress Rules (should allow ports 9200+9300 from same namespace) ==="
+oc get networkpolicy es-test-network-policy -n $NAMESPACE -o jsonpath='{.spec.ingress[0].ports[*].port}' && echo " (should be 9200 9300)"
+
+echo ""
+echo "=== Egress Rules ==="
+echo "DNS egress:"
+oc get networkpolicy es-test-network-policy -n $NAMESPACE -o jsonpath='{.spec.egress[0].ports[*].port}' && echo " (should be 53 53)"
+echo "Intra-cluster egress:"
+oc get networkpolicy es-test-network-policy -n $NAMESPACE -o jsonpath='{.spec.egress[1].ports[*].port}' && echo " (should be 9200 9300)"
+
+echo ""
+echo "=== PolicyTypes ==="
+oc get networkpolicy es-test-network-policy -n $NAMESPACE -o jsonpath='{.spec.policyTypes}' && echo ""
+
+echo ""
+echo "=== Owner Reference ==="
+oc get networkpolicy es-test-network-policy -n $NAMESPACE -o jsonpath='{.metadata.ownerReferences[0].kind}' && echo " (should be ElasticsearchCluster)"
+```
+
+**Expected**:
+- [ ] Ingress allows ports 9200 (HTTP) + 9300 (transport) from same namespace
+- [ ] Egress allows DNS (port 53 TCP+UDP) + intra-cluster replication (9200+9300)
+- [ ] Owner reference → ElasticsearchCluster
+
+### C.6.2 Verify NetworkSecured Condition
+
+```bash
+oc get elasticsearchcluster es-test -n $NAMESPACE -o jsonpath='{.status.conditions}' | python3 -c "
+import json, sys
+conditions = json.load(sys.stdin)
+for c in conditions:
+    if c['type'] == 'NetworkSecured':
+        print(f\"NetworkSecured: {c['status']} (reason: {c['reason']})\")
+"
+```
+
+**Expected**:
+- [ ] NetworkSecured: True (NetworkSecured)
+
+---
+
+## Phase C.7: Idempotency
+
+### C.7.1 Re-reconcile and Verify No Duplicates
+
+```bash
+oc delete pod -n $NAMESPACE -l control-plane=controller-manager
+oc wait --for=condition=available deployment -l control-plane=controller-manager -n $NAMESPACE --timeout=60s
+sleep 15
+
+echo "NetworkPolicies: $(oc get networkpolicy -n $NAMESPACE 2>&1 | grep -c es-test-network-policy) (should be 1)"
+echo "StatefulSets: $(oc get statefulset -n $NAMESPACE 2>&1 | grep -c es-test) (should be 1)"
+echo "Secrets: $(oc get secret -n $NAMESPACE 2>&1 | grep -c es-test-auth) (should be 1)"
+```
+
+**Expected**: Exactly 1 of each, no duplicates.
+
+---
+
+## Phase C.8: Delete CR
+
+### C.8.1 Delete and Verify All Resources Cleaned
+
+```bash
+oc delete elasticsearchcluster es-test -n $NAMESPACE
+sleep 15
+
+oc get secret es-test-auth -n $NAMESPACE 2>&1 | grep "not found" && echo "PASS: Secret cleaned"
+oc get configmap es-test-config -n $NAMESPACE 2>&1 | grep "not found" && echo "PASS: ConfigMap cleaned"
+oc get service es-test-http -n $NAMESPACE 2>&1 | grep "not found" && echo "PASS: HTTP Service cleaned"
+oc get service es-test-transport -n $NAMESPACE 2>&1 | grep "not found" && echo "PASS: Transport Service cleaned"
+oc get statefulset es-test -n $NAMESPACE 2>&1 | grep "not found" && echo "PASS: StatefulSet cleaned"
+oc get networkpolicy es-test-network-policy -n $NAMESPACE 2>&1 | grep "not found" && echo "PASS: NetworkPolicy cleaned"
+```
+
+**Expected**:
+- [ ] All 6 managed resources garbage collected (including NetworkPolicy)
+
+---
+
+## Phase C.9: RBAC Verification
+
+### C.9.1 Verify NetworkPolicy RBAC
+
+```bash
+oc auth can-i create networkpolicies --as=system:serviceaccount:elasticsearch-operator-system:elasticsearch-operator-controller-manager -n elasticsearch-operator-system && echo "PASS: Can create NetworkPolicies" || echo "FAIL"
+oc auth can-i delete networkpolicies --as=system:serviceaccount:elasticsearch-operator-system:elasticsearch-operator-controller-manager -n elasticsearch-operator-system && echo "PASS: Can delete NetworkPolicies" || echo "FAIL"
+```
+
+**Expected**: Both return "yes".
+
+---
+
+## Phase C.10: OLM Bundle Validation
+
+### C.10.1 Verify Bundle Version
+
+```bash
+echo "=== CSV Version ==="
+grep 'name:.*elasticsearch-operator.v' bundle/manifests/elasticsearch-operator.clusterserviceversion.yaml | head -1
+grep 'replaces:' bundle/manifests/elasticsearch-operator.clusterserviceversion.yaml
+grep '^  version:' bundle/manifests/elasticsearch-operator.clusterserviceversion.yaml
+```
+
+**Expected**:
+- [ ] CSV name: `elasticsearch-operator.v0.3.0`
+- [ ] replaces: `elasticsearch-operator.v0.2.0`
+- [ ] version: `0.3.0`
+
+### C.10.2 Verify Webhook Definitions in CSV
+
+```bash
+grep -A2 'webhookdefinitions' bundle/manifests/elasticsearch-operator.clusterserviceversion.yaml | head -5
+grep 'webhookPath' bundle/manifests/elasticsearch-operator.clusterserviceversion.yaml
+```
+
+**Expected**: Both mutating (`/mutate-...`) and validating (`/validate-...`) webhook paths present.
+
+### C.10.3 Verify NetworkPolicy RBAC in CSV
+
+```bash
+grep -A4 'networking.k8s.io' bundle/manifests/elasticsearch-operator.clusterserviceversion.yaml | head -5
+```
+
+**Expected**: `networking.k8s.io/networkpolicies` with CRUD verbs.
+
+### C.10.4 Bundle Validate
+
+```bash
+operator-sdk bundle validate bundle/
+```
+
+**Expected**: No errors.
+
+---
+
+## Scenario C Cleanup
+
+```bash
+oc delete elasticsearchcluster --all -n $NAMESPACE
+sleep 15
+
+# If NOT continuing to Scenario D, undeploy:
+# make undeploy                                                        # if deployed with make deploy
+# operator-sdk cleanup elasticsearch-operator --namespace $NAMESPACE    # if deployed with OLM
+# oc delete project $NAMESPACE
+```
+
+---
+
+## Scenario C Summary Checklist
+
+| # | Test | Phase | Expected |
+|---|------|-------|----------|
+| 1 | cert-manager running | C.1 | Pods Running |
+| 2 | Operator deploys with v0.3.0 image | C.1 | Pod Running |
+| 3 | Webhook Service + configurations registered | C.1 | Mutating + Validating |
+| 4 | Controller watching 8 EventSources (added NP) | C.1 | 8 sources |
+| 5 | All 5 core resources created | C.2 | Secret, ConfigMap, Service×2, StatefulSet |
+| 6 | NetworkPolicy created (always, not conditional) | C.2 | es-test-network-policy |
+| 7 | No master/backup when not configured | C.2 | Not found |
+| 8 | Replicas defaulted to 3 when 0 | C.3 | Webhook defaulting |
+| 9 | Version defaulted to "8.14" when empty | C.3 | Webhook defaulting |
+| 10 | backup.retentionDays defaulted to 7 | C.3 | Webhook defaulting |
+| 11 | master.replicas defaulted to 3 | C.3 | Webhook defaulting |
+| 12 | Reject replicas < 1 | C.4 | Validation error |
+| 13 | Reject even master.replicas (quorum) | C.4 | Validation error |
+| 14 | Reject both auth.adminPassword + existingSecret | C.4 | Mutual exclusivity |
+| 15 | Reject backup.enabled without schedule | C.4 | Validation error |
+| 16 | Reject storage size reduction on update | C.5 | Validation error |
+| 17 | Allow storage size increase | C.5 | Accepted |
+| 18 | NetworkPolicy allows ports 9200+9300 ingress | C.6 | Two-port ingress |
+| 19 | NetworkPolicy has DNS + intra-cluster egress | C.6 | DNS 53 + replication 9200+9300 |
+| 20 | NetworkPolicy owner ref → ElasticsearchCluster | C.6 | Correct |
+| 21 | NetworkSecured condition True | C.6 | NetworkSecured |
+| 22 | Idempotent — no duplicate NetworkPolicies | C.7 | Exactly 1 |
+| 23 | All 6 resources cleaned on CR delete | C.8 | Including NetworkPolicy |
+| 24 | NetworkPolicy RBAC works | C.9 | can-i returns yes |
+| 25 | CSV version 0.3.0 with replaces v0.2.0 | C.10 | Correct upgrade path |
+| 26 | Webhook definitions in CSV | C.10 | Both mutating + validating |
+| 27 | NetworkPolicy RBAC in CSV | C.10 | networking.k8s.io |
+| 28 | Bundle validates | C.10 | No errors |

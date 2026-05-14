@@ -24,6 +24,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -428,5 +429,108 @@ func (r *ElasticsearchClusterReconciler) reconcileBackupCronJob(ctx context.Cont
 	}
 	r.Recorder.Event(cr, corev1.EventTypeNormal, "BackupCronJobCreated", fmt.Sprintf("Created backup CronJob %s with schedule %s", name, cr.Spec.Backup.Schedule))
 	setBackupReadyCondition(cr, "BackupConfigured", "Backup CronJob is scheduled")
+	return nil
+}
+
+func (r *ElasticsearchClusterReconciler) reconcileNetworkPolicy(ctx context.Context, cr *searchv1alpha1.ElasticsearchCluster) error {
+	name := fmt.Sprintf("%s-network-policy", cr.Name)
+	existing := &networkingv1.NetworkPolicy{}
+	err := r.Get(ctx, types.NamespacedName{Name: name, Namespace: cr.Namespace}, existing)
+	if err == nil {
+		setNetworkSecuredCondition(cr, "NetworkSecured", "NetworkPolicy is configured")
+		return nil
+	}
+	if !errors.IsNotFound(err) {
+		return err
+	}
+
+	httpPort := intstr.FromInt32(9200)
+	transportPort := intstr.FromInt32(9300)
+	dnsPort := intstr.FromInt32(53)
+	protocolTCP := corev1.ProtocolTCP
+	protocolUDP := corev1.ProtocolUDP
+
+	np := &networkingv1.NetworkPolicy{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: cr.Namespace,
+			Labels:    labelsForElasticsearchCluster(cr),
+		},
+		Spec: networkingv1.NetworkPolicySpec{
+			PodSelector: metav1.LabelSelector{
+				MatchLabels: labelsForElasticsearchCluster(cr),
+			},
+			PolicyTypes: []networkingv1.PolicyType{
+				networkingv1.PolicyTypeIngress,
+				networkingv1.PolicyTypeEgress,
+			},
+			Ingress: []networkingv1.NetworkPolicyIngressRule{
+				{
+					From: []networkingv1.NetworkPolicyPeer{
+						{
+							PodSelector: &metav1.LabelSelector{},
+						},
+					},
+					Ports: []networkingv1.NetworkPolicyPort{
+						{
+							Port:     &httpPort,
+							Protocol: &protocolTCP,
+						},
+						{
+							Port:     &transportPort,
+							Protocol: &protocolTCP,
+						},
+					},
+				},
+			},
+			Egress: []networkingv1.NetworkPolicyEgressRule{
+				{
+					Ports: []networkingv1.NetworkPolicyPort{
+						{
+							Port:     &dnsPort,
+							Protocol: &protocolTCP,
+						},
+						{
+							Port:     &dnsPort,
+							Protocol: &protocolUDP,
+						},
+					},
+				},
+				{
+					To: []networkingv1.NetworkPolicyPeer{
+						{
+							PodSelector: &metav1.LabelSelector{
+								MatchLabels: labelsForElasticsearchCluster(cr),
+							},
+						},
+					},
+					Ports: []networkingv1.NetworkPolicyPort{
+						{
+							Port:     &httpPort,
+							Protocol: &protocolTCP,
+						},
+						{
+							Port:     &transportPort,
+							Protocol: &protocolTCP,
+						},
+					},
+				},
+			},
+		},
+	}
+
+	if err := controllerutil.SetControllerReference(cr, np, r.Scheme); err != nil {
+		return err
+	}
+
+	if err := r.Create(ctx, np); err != nil {
+		r.Recorder.Event(cr, corev1.EventTypeWarning, "NetworkPolicyFailed",
+			fmt.Sprintf("Failed to create NetworkPolicy: %v", err))
+		return err
+	}
+
+	r.Recorder.Event(cr, corev1.EventTypeNormal, "NetworkPolicyCreated",
+		fmt.Sprintf("Created NetworkPolicy %s", name))
+	setNetworkSecuredCondition(cr, "NetworkSecured", "NetworkPolicy is configured")
 	return nil
 }

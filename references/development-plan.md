@@ -313,7 +313,7 @@ Operator projects are complex and diverse. E2E validation is organized by operat
 
 | Category | Examples | Patterns Tested | Status |
 |----------|---------|-----------------|--------|
-| **Stateful Workloads** | PostgreSQL, Redis, MongoDB, Elasticsearch | StatefulSet, PVC, backup CronJob/Job, connection pooling, HA (PDB/anti-affinity/arbiter), multi-group CRD | **PostgreSQL DONE** (111/111), **Redis A-E DONE** (139/139, 0 fixes), **MongoDB A-E DONE** (150/150, 1 fix), **Elasticsearch A-B DONE** (55/55, 0 fixes) |
+| **Stateful Workloads** | PostgreSQL, Redis, MongoDB, Elasticsearch | StatefulSet, PVC, backup CronJob/Job, connection pooling, HA (PDB/anti-affinity/arbiter), multi-group CRD | **PostgreSQL DONE** (111/111), **Redis A-E DONE** (139/139, 0 fixes), **MongoDB A-E DONE** (150/150, 1 fix), **Elasticsearch A-C DONE** (83/83, 0 fixes) |
 | **Application Platform** | RHOAI, Tekton, ArgoCD, ServiceMesh | Deployment, multi-component, cross-namespace | Planned |
 | **Infrastructure / Cloud** | Cluster autoscaler, node management | Cluster-scoped CRDs, node selectors, taints | Planned |
 | **Network / Security** | cert-manager, Kuadrant, External DNS | Webhooks, NetworkPolicy, TLS certificates, ingress | Partial (tested within PostgreSQL C) |
@@ -381,13 +381,13 @@ N=4 generality proof — 4th stateful workload to confirm skills are truly gener
 - **Prompts**: [`e2e/docs/statefulsets/elasticsearch-prompts.md`](../e2e/docs/statefulsets/elasticsearch-prompts.md)
 - **Validation guide**: [`e2e/docs/statefulsets/elasticsearch-e2e-validation.md`](../e2e/docs/statefulsets/elasticsearch-e2e-validation.md)
 - **Operator code**: `e2e/elasticsearch-operator/`
-- **Results**: Scenarios A-B complete — 55/55 test conditions pass on OpenShift, zero skill modifications. Scenarios C-E pending.
+- **Results**: Scenarios A-C complete — 83/83 test conditions pass on OpenShift, zero skill modifications. Scenarios D-E pending.
 
 | Scenario | Feature | Version | Tests | Skills Exercised |
 |----------|---------|---------|-------|-----------------|
 | A | Core (data nodes) | v0.1.0 | 36 | All 5 skills (Workflow A) + 3 subagents |
 | B | Dedicated master nodes | v0.2.0 | 19 | 4 skills (Workflow B) + 3 subagents |
-| C | Webhooks + NetworkPolicy | v0.3.0 | — | Pending |
+| C | Webhooks + NetworkPolicy | v0.3.0 | 28 | 4 skills (Workflow C+B) + 3 subagents |
 | D | API Maturity + ILM | v0.4.0 | — | Pending |
 | E | Same-group CRD (ElasticsearchIndex) | v0.5.0 | — | Pending |
 
@@ -439,4 +439,4 @@ Multi-component stateful workload (ZooKeeper + Kafka brokers + topic management)
 | 8 | operator-bundle-validator | 8.1, 8.2 | I-8 | A, B, C, D |
 | Final | All components | — | — | A, B, C, D |
 
-**Total**: 16 unit tests + 7 integration tests + E2E scenarios (PostgreSQL 111 + Redis 139 + MongoDB 150 + Elasticsearch 55 = 455 OpenShift test conditions) = **478 test points**
+**Total**: 16 unit tests + 7 integration tests + E2E scenarios (PostgreSQL 111 + Redis 139 + MongoDB 150 + Elasticsearch 83 = 483 OpenShift test conditions) = **506 test points**

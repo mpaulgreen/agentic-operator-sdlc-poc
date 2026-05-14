@@ -27,6 +27,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -443,6 +444,55 @@ var _ = Describe("ElasticsearchCluster Controller", func() {
 			// Verify it was deleted
 			err := k8sClient.Get(ctx, types.NamespacedName{Name: crName + "-master", Namespace: nsName}, dep)
 			Expect(err).To(HaveOccurred())
+		})
+	})
+
+	// -----------------------------------------------------------------------
+	// reconcileNetworkPolicy
+	// -----------------------------------------------------------------------
+	Context("When reconciling NetworkPolicy", func() {
+		It("should create NetworkPolicy with correct ports and labels", func() {
+			Expect(reconciler.reconcileNetworkPolicy(ctx, cr)).To(Succeed())
+
+			np := &networkingv1.NetworkPolicy{}
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: crName + "-network-policy", Namespace: nsName}, np)).To(Succeed())
+
+			// Verify labels match
+			expectedLabels := labelsForElasticsearchCluster(cr)
+			for k, v := range expectedLabels {
+				Expect(np.Labels).To(HaveKeyWithValue(k, v))
+			}
+
+			// Verify pod selector
+			Expect(np.Spec.PodSelector.MatchLabels).To(Equal(expectedLabels))
+
+			// Verify policy types
+			Expect(np.Spec.PolicyTypes).To(ConsistOf(
+				networkingv1.PolicyTypeIngress,
+				networkingv1.PolicyTypeEgress,
+			))
+
+			// Verify ingress rules — ports 9200 and 9300
+			Expect(np.Spec.Ingress).To(HaveLen(1))
+			Expect(np.Spec.Ingress[0].Ports).To(HaveLen(2))
+			Expect(np.Spec.Ingress[0].Ports[0].Port.IntValue()).To(Equal(9200))
+			Expect(np.Spec.Ingress[0].Ports[1].Port.IntValue()).To(Equal(9300))
+
+			// Verify owner reference
+			Expect(np.OwnerReferences).To(HaveLen(1))
+			Expect(np.OwnerReferences[0].Name).To(Equal(crName))
+		})
+
+		It("should not recreate existing NetworkPolicy (idempotent)", func() {
+			Expect(reconciler.reconcileNetworkPolicy(ctx, cr)).To(Succeed())
+
+			np := &networkingv1.NetworkPolicy{}
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: crName + "-network-policy", Namespace: nsName}, np)).To(Succeed())
+			originalVersion := np.ResourceVersion
+
+			Expect(reconciler.reconcileNetworkPolicy(ctx, cr)).To(Succeed())
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: crName + "-network-policy", Namespace: nsName}, np)).To(Succeed())
+			Expect(np.ResourceVersion).To(Equal(originalVersion))
 		})
 	})
 

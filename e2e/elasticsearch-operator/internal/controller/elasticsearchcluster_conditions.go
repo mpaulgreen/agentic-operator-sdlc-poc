@@ -82,3 +82,12 @@ func setMasterReadyCondition(cr *searchv1alpha1.ElasticsearchCluster, reason, me
 func clearMasterReadyCondition(cr *searchv1alpha1.ElasticsearchCluster, reason, message string) {
 	setCondition(cr, ConditionMasterReady, metav1.ConditionFalse, reason, message)
 }
+
+const ConditionNetworkSecured = "NetworkSecured"
+
+func setNetworkSecuredCondition(cr *searchv1alpha1.ElasticsearchCluster, reason, message string) {
+	setCondition(cr, ConditionNetworkSecured, metav1.ConditionTrue, reason, message)
+}
+func clearNetworkSecuredCondition(cr *searchv1alpha1.ElasticsearchCluster, reason, message string) {
+	setCondition(cr, ConditionNetworkSecured, metav1.ConditionFalse, reason, message)
+}

@@ -30,11 +30,11 @@ metadata:
     capabilities: Basic Install
     categories: Database
     certified: "false"
-    createdAt: "2026-05-12T00:00:00Z"
+    createdAt: "2026-05-14T00:00:00Z"
     operators.operatorframework.io/builder: operator-sdk-v1.37.0
     operators.operatorframework.io/project_layout: go.kubebuilder.io/v4
     repository: https://github.com/example/elasticsearch-operator
-  name: elasticsearch-operator.v0.2.0
+  name: elasticsearch-operator.v0.3.0
   namespace: placeholder
 spec:
   apiservicedefinitions: {}
@@ -57,6 +57,8 @@ spec:
       - kind: CronJob
         version: v1
       - kind: Deployment
+        version: v1
+      - kind: NetworkPolicy
         version: v1
       specDescriptors:
       - path: replicas
@@ -235,6 +237,18 @@ spec:
           - patch
           - update
           - watch
+        - apiGroups:
+          - networking.k8s.io
+          resources:
+          - networkpolicies
+          verbs:
+          - create
+          - delete
+          - get
+          - list
+          - patch
+          - update
+          - watch
         serviceAccountName: elasticsearch-operator-controller-manager
       deployments:
       - label:
@@ -263,7 +277,7 @@ spec:
                 - --leader-elect
                 command:
                 - /manager
-                image: quay.io/mpaulgreen/elasticsearch-operator:v0.2.0
+                image: quay.io/mpaulgreen/elasticsearch-operator:v0.3.0
                 livenessProbe:
                   httpGet:
                     path: /healthz
@@ -337,6 +351,47 @@ spec:
     type: MultiNamespace
   - supported: true
     type: AllNamespaces
+  webhookdefinitions:
+  - admissionReviewVersions:
+    - v1
+    containerPort: 9443
+    deploymentName: elasticsearch-operator-controller-manager
+    failurePolicy: Fail
+    generateName: melasticsearchcluster.kb.io
+    rules:
+    - apiGroups:
+      - search.elasticsearch.example.com
+      apiVersions:
+      - v1alpha1
+      operations:
+      - CREATE
+      - UPDATE
+      resources:
+      - elasticsearchclusters
+    sideEffects: None
+    targetPort: 9443
+    type: MutatingAdmissionWebhook
+    webhookPath: /mutate-search-elasticsearch-example-com-v1alpha1-elasticsearchcluster
+  - admissionReviewVersions:
+    - v1
+    containerPort: 9443
+    deploymentName: elasticsearch-operator-controller-manager
+    failurePolicy: Fail
+    generateName: velasticsearchcluster.kb.io
+    rules:
+    - apiGroups:
+      - search.elasticsearch.example.com
+      apiVersions:
+      - v1alpha1
+      operations:
+      - CREATE
+      - UPDATE
+      resources:
+      - elasticsearchclusters
+    sideEffects: None
+    targetPort: 9443
+    type: ValidatingAdmissionWebhook
+    webhookPath: /validate-search-elasticsearch-example-com-v1alpha1-elasticsearchcluster
   keywords:
   - elasticsearch
   - search
@@ -354,5 +409,5 @@ spec:
   provider:
     name: Example
     url: https://example.com
-  replaces: elasticsearch-operator.v0.1.0
-  version: 0.2.0
+  replaces: elasticsearch-operator.v0.2.0
+  version: 0.3.0
